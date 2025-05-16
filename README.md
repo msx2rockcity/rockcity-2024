@@ -10,3 +10,5 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 
 現在はまだクリアするとBASICに戻ったりとバグが残っています
 衝突音は新たに追加した要素です
+
+<a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
