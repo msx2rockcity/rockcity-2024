@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 1.2.1
+;  MSXPen LAST VERSION VER 1.2.2
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -21,7 +21,7 @@ BREAKX:   EQU     00B7H
 CALSLT:   EQU     001CH
 WRTPSG:   EQU	  0093H
 EXPTBL:   EQU     0FCC1H
-          ORG     0A000H
+          ORG     09000H
 ;
 ;---- SCREEN & COLOR SET ----
 ;
@@ -1866,7 +1866,8 @@ TUCH2:    CALL    PISTOL
           LD      (LIFE),A
           RET
           ;
-TUCH3:    LD      A,(LIFE)
+TUCH3:    CALL    ITEMGT
+          LD      A,(LIFE)
           ADD     A,4
           CP      17
           JR      C,$+4
@@ -1877,7 +1878,8 @@ TUCH3:    LD      A,(LIFE)
           LD      (IX+2),A
           RET
           ;
-TUCH4:    LD      A,(SWHICH)
+TUCH4:    CALL    ITEMGT
+          LD      A,(SWHICH)
           XOR     00000100B
           LD      (SWHICH),A
           XOR     A
@@ -2278,6 +2280,107 @@ KEYOFF:
             EI
             RET
             
+                ; PSGレジスタ書き込み用ポート
+PSG_ADDR EQU &HA0      ; PSGアドレスポート
+PSG_DATA EQU &HA1      ; PSGデータポート
+
+ITEMGT:
+    		; PSG初期化（チャンネルAを有効、ノイズオフ、音量0）
+            PUSH AF
+            PUSH BC
+    		LD   A,7           ; レジスタ7（ミキサー）
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,62          ; 00111110（チャンネルA有効、ノイズオフ）
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+
+    		; 音量リセット（チャンネルA）
+    		LD   A,8           ; レジスタ8（チャンネルA音量）
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,0           ; 音量0
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+
+    		; 1つ目の音（周波数約3700Hz）
+    		LD   A,0           ; レジスタ0（チャンネルA周波数下位）
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,120         ; 周波数120
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+    		LD   A,1           ; レジスタ1（チャンネルA周波数上位）
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,0           ; 上位0
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+    		; 音量オン
+    		LD   A,8
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,15          ; 音量最大
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+    		; ディレイ
+    		CALL DELAY
+
+    		; 2つ目の音（周波数約4400Hz）
+    		LD   A,0
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,100         ; 周波数100
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+    		LD   A,1
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,0
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+    		CALL DELAY
+
+    		; 3つ目の音（周波数約5500Hz）
+    		LD   A,0
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,80          ; 周波数80
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+    		LD   A,1
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,0
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+    		CALL DELAY
+
+    		; 音を停止
+    		LD   A,8
+    		LD   BC,PSG_ADDR
+    		OUT  (C),A
+    		LD   A,0           ; 音量0
+    		LD   BC,PSG_DATA
+    		OUT  (C),A
+            POP  BC
+            POP  AF
+
+    		; プログラム終了
+    		RET
+
+    		; ディレイサブルーチン（約20ms）
+DELAY:
+    		PUSH BC
+    		LD   BC,5000       ; ディレイ調整（MSX2の3.58MHzで約20ms）
+DELAY_LOOP:
+    		DEC  BC
+    		LD   A,B
+    		OR   C
+    		JR   NZ,DELAY_LOOP
+    		POP  BC
+    		RET
+
 ;------------------------------------------------
 ;
 ; TITLE DEMO
@@ -2351,7 +2454,7 @@ LOSTI:    CALL    STRIG
           JP      TITLE
           ;
 NEXTGO:   CALL    FADE
-		  CALL    PISTOL
+		  CALL    ITEMGT
           LD      A,16
           CALL    MAIN
           JP      SELECT
@@ -2511,7 +2614,7 @@ LPSLCT:   LD      A,2
           ;
 JUMPSL:   CALL    FADE
           LD      A,10
-          CALL    PISTOL
+          CALL    ITEMGT
           CALL    MAIN
           LD      HL,0
           LD      (SCORE),HL
@@ -2611,7 +2714,7 @@ PRJP3:    DEC     C
           ;
 JPPRCT:   LD      B,10
           CALL    FADE
-		  CALL    PISTOL
+		  CALL    ITEMGT
 JPPRJ1:   LD      A,1
           CALL    MAIN
           DJNZ    JPPRJ1
@@ -2872,7 +2975,8 @@ GMOVEM:   DEFB    'G',0,0,'A',30,0,'M',60,0,'E',90,0
 ;
 ; TUCH ROUTINE 5-8
 ;
-TUCH5:    LD      A,(IX+13)
+TUCH5:    CALL    ITEMGT
+          LD      A,(IX+13)
           LD      DE,400
           CP      8
           JR      Z,TDTJ5
@@ -2893,7 +2997,8 @@ TDTJ5:    LD      HL,(SCORE)
           LD      (IX+2),A
           RET
           ;
-TUCH6:    LD      A,(IX+14)
+TUCH6:    CALL    ITEMGT
+          LD      A,(IX+14)
           LD      DE,250
           CP      6
           JR      Z,$+5
@@ -2908,14 +3013,16 @@ TUCH6:    LD      A,(IX+14)
           LD      (IX+2),A
           RET
           ;
-TUCH7:    CALL    TUCH2
+TUCH7:    CALL    ITEMGT
+		  CALL    TUCH2
           LD      A,(MASTER+9)
           XOR     127
           ADD     A,17
           LD      (MASTER+9),A
           RET
           ;
-TUCH8:    LD      A,64
+TUCH8:    CALL    ITEMGT
+	      LD      A,64
           LD      (MASTER+8),A
           LD      A,(IX+13)
           CP      9
