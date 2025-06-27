@@ -11,6 +11,8 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 現在はまだクリアするとBASICに戻ったりとバグが残っています
 衝突音は新たに追加した要素です
 
+2025/06/27 ver1.2.2 アイテム音追加、キークリック音消し
+
 最終バージョンのMSXPen ver1.2.2
 https://msxpen.com/codes/-OThmlAoHDeFOkwYpxMd
 
