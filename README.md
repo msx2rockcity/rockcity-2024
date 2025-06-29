@@ -12,8 +12,9 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 衝突音は新たに追加した要素です
 
 2025/06/27 ver1.2.2 アイテム音追加、キークリック音消し
+2025/06/29 ver1.2.3 エンジン音追加、接触音変更
 
-最終バージョンのMSXPen ver1.2.2
-https://msxpen.com/codes/-OThmlAoHDeFOkwYpxMd
+最終バージョンのMSXPen ver1.2.3
+https://msxpen.com/codes/-OTtkmPtDUiF-xOUvkvH
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
