@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 1.2.2
+;  MSXPen LAST VERSION VER 1.2.3
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -1867,6 +1867,7 @@ TUCH2:    CALL    PISTOL
           RET
           ;
 TUCH3:    CALL    ITEMGT
+          CALL    MOVESD
           LD      A,(LIFE)
           ADD     A,4
           CP      17
@@ -1879,6 +1880,7 @@ TUCH3:    CALL    ITEMGT
           RET
           ;
 TUCH4:    CALL    ITEMGT
+          CALL    MOVESD
           LD      A,(SWHICH)
           XOR     00000100B
           LD      (SWHICH),A
@@ -2177,7 +2179,55 @@ M3HJ3:    XOR     A
 ; SOUND 
 ;
 ;------------------------------------------------
-PISTOL:		CALL	SOUND
+
+SDOFF:		CALL	SOUND
+			DEFB	0,0H
+            DEFB	1,0H
+            DEFB	2,0H
+            DEFB 	3,0H
+            DEFB	4,0H
+            DEFB	5,0H
+            DEFB	6,0H
+			DEFB	7,0FFH
+            DEFB	8,0H
+            DEFB	9,0H
+            DEFB	10,0H
+            DEFB	12,0H
+            DEFB	13,0H
+            DEFB	0FFH
+            RET
+
+SDWAIT:     PUSH BC
+    		LD   BC,6000
+DLOOP:
+    		DEC  BC
+    		LD   A,B
+    		OR   C
+    		JR   NZ,DLOOP
+    		POP  BC
+    		RET
+            
+MOVESD:		CALL	SOUND
+			DEFB	0,28H
+            DEFB	1,00H
+            DEFB	6,1FH
+            DEFB	7,80H
+            DEFB	8,6
+            DEFB	0FFH
+            RET
+
+PISTOL:	 	CALL	SOUND
+			DEFB	2,14H
+            DEFB	3,01H
+            DEFB	6,1FH
+            DEFB	7,80H
+            DEFB	9,10H
+            DEFB	12,20H
+            DEFB	13,0H
+            DEFB 	0FFH
+            RET
+
+PISTOL2:	CALL	SOUND
             DEFB	7,0B7H
             DEFB	6,7H
             DEFB	8,10H
@@ -2185,6 +2235,7 @@ PISTOL:		CALL	SOUND
             DEFB	12,0DH
             DEFB	13,0H
             DEFB	0FFH
+            CALL    SDWAIT
             RET
             
 EXPLO:		CALL	SOUND
@@ -2976,6 +3027,7 @@ GMOVEM:   DEFB    'G',0,0,'A',30,0,'M',60,0,'E',90,0
 ; TUCH ROUTINE 5-8
 ;
 TUCH5:    CALL    ITEMGT
+		  CALL	  MOVESD
           LD      A,(IX+13)
           LD      DE,400
           CP      8
@@ -2998,6 +3050,7 @@ TDTJ5:    LD      HL,(SCORE)
           RET
           ;
 TUCH6:    CALL    ITEMGT
+          CALL    MOVESD
           LD      A,(IX+14)
           LD      DE,250
           CP      6
@@ -3013,15 +3066,14 @@ TUCH6:    CALL    ITEMGT
           LD      (IX+2),A
           RET
           ;
-TUCH7:    CALL    ITEMGT
-		  CALL    TUCH2
+TUCH7:	  CALL    TUCH2
           LD      A,(MASTER+9)
           XOR     127
           ADD     A,17
           LD      (MASTER+9),A
           RET
           ;
-TUCH8:    CALL    ITEMGT
+TUCH8:    CALL    PISTOL
 	      LD      A,64
           LD      (MASTER+8),A
           LD      A,(IX+13)
@@ -3065,7 +3117,8 @@ STAGE1:   CALL    CLSPRI
           CALL    MAIN
           CALL    MSSTR
           ;
-S1CONT:   LD      HL,S1STAGD1
+S1CONT:   CALL	  MOVESD
+		  LD      HL,S1STAGD1
           LD      DE,SCROLL
           LD      BC,9
           LDIR
@@ -3104,7 +3157,8 @@ S1RETLOP: CALL    TURBO
           LD      (SWHICH),A
           LD      HL,S1CONT2
           LD      (CONTRT),HL
-S1CONT2:  LD      A,28
+S1CONT2:  CALL    MOVESD
+		  LD      A,28
           CALL    MAIN
           LD      B,40
 S1LOOP2:  CALL    S1CHARA3
@@ -3389,6 +3443,7 @@ S1LOOP9:  LD      A,1
           CALL    FADE
           LD      A,24
           CALL    MAIN
+          CALL    SDOFF
           RET   ;  JP      STAGE2
           ;
 S1COREPT: DEFB    6,0
@@ -3435,7 +3490,8 @@ STAGE2:   CALL    CLSPRI
           CALL    MAIN
           CALL    MSSTR
           ;
-S2CONT:   LD      HL,S2STAGD1
+S2CONT:   CALL	  MOVESD
+		  LD      HL,S2STAGD1
           LD      DE,SCROLL
           LD      BC,9
           LDIR
@@ -3490,7 +3546,8 @@ S2RETLOP: CALL    RND
           LD      (SWHICH),A
           LD      HL,S2CONT2
           LD      (CONTRT),HL
-S2CONT2:  LD      A,24
+S2CONT2:  CALL	  MOVESD
+		  LD      A,24
           CALL    MAIN
           LD      B,192
 S2LOOP2:  CALL    TURBO
@@ -3809,6 +3866,7 @@ S2LOOP9:  LD      A,1
           CALL    MAIN
           CALL    FADE
           LD      A,24
+          CALL    SDOFF
           CALL    MAIN
           RET
           ;
@@ -4037,7 +4095,8 @@ STAGE3:   CALL    CLSPRI
           CALL    MAIN
           CALL    MSSTR  
           ;
-S3CONT:   LD      HL,S3STAGD1
+S3CONT:   CALL	  MOVESD
+		  LD      HL,S3STAGD1
           LD      DE,SCROLL
           LD      BC,9
           LDIR
@@ -4108,7 +4167,8 @@ S3RETLOP: LD      A,4
           LD      HL,S3CONT2
           LD      (CONTRT),HL
           ;
-S3CONT2:  LD      A,32
+S3CONT2:  CALL	  MOVESD
+		  LD      A,32
           CALL    MAIN
           LD      B,192
 S3LOOP2:  CALL    TURBO
@@ -4413,6 +4473,7 @@ S3BOSS:   LD      A,(SWHICH)
           CALL    MAIN
           CALL    FADE
           LD      A,24
+          CALL    SDOFF
           CALL    MAIN
           RET ; JP STAGE4
           ;
@@ -4664,7 +4725,8 @@ STAGE4:   CALL    CLSPRI
           CALL    MAIN
           CALL    MSSTR
           ;
-S4CONT:   LD      HL,S4STAGD1
+S4CONT:   CALL    MOVESD
+          LD      HL,S4STAGD1
           LD      DE,SCROLL
           LD      BC,9
           LDIR
@@ -4744,7 +4806,8 @@ S4RETLOP: LD      A,6
           LD      HL,S4CONT2
           LD      (CONTRT),HL
           ;
-S4CONT2:  LD      A,13
+S4CONT2:  CALL    MOVESD
+          LD      A,13
           LD      (MASTER+13),A
           LD      A,32
           CALL    MAIN
@@ -5047,6 +5110,7 @@ S4BOSM:   CALL    DSET
           CALL    MAIN
           CALL    FADE
           LD      A,24
+          CALL    SDOFF
           CALL    MAIN
           JP      ENDING
           ;
