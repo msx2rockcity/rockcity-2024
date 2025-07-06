@@ -11,9 +11,9 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 現在はまだクリアするとBASICに戻ったりとバグが残っています
 衝突音は新たに追加した要素です
 
-2025/06/29 ver1.2.3 エンジン音追加、接触音変更
+2025/07/02 ver1.2.4 ステージをクリアするとBASICに戻るバグを修正。ステージ4をクリアするとプラクティスモードを抜けるようにオリジナルバイナリの動作から変更
 
-最終バージョンのMSXPen ver1.2.3
-https://msxpen.com/codes/-OTtkmPtDUiF-xOUvkvH
+最終バージョンのMSXPen ver1.2.4
+https://msxpen.com/codes/-OUKLnjgiwtXhZKEpS7Y
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
