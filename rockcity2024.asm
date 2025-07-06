@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 1.2.3
+;  MSXPen LAST VERSION VER 1.2.4
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -2769,7 +2769,7 @@ JPPRCT:   LD      B,10
 JPPRJ1:   LD      A,1
           CALL    MAIN
           DJNZ    JPPRJ1
-          LD      HL,PRATCE
+          LD      HL,PRART
           LD      (JPDEAD),HL
           LD      A,9
           LD      (STOCK),A
@@ -2793,8 +2793,11 @@ JPCT2:    CP      2
           JP      PRATCE
 JPCT3:    CALL    STAGE4
           CALL    ENDING
-          JP      PRATCE
+          JP      TITLE
           ;
+PRART:	  POP	  HL
+		  JP	  TITLE
+		  ;
 SJIMV:    LD      (IX+7),128
           LD      (IX+8),160
           LD      (IX+9),10
@@ -3099,6 +3102,7 @@ TUCH8:    CALL    PISTOL
 ;---- STAGE1 PROGRAM ----
 ;
 STAGE1:   CALL    CLSPRI
+		  LD	  (STACK),SP
           LD      A,00001000B
           LD      (SWHICH),A
           CALL    DSET
@@ -3444,7 +3448,7 @@ S1LOOP9:  LD      A,1
           LD      A,24
           CALL    MAIN
           CALL    SDOFF
-          RET   ;  JP      STAGE2
+          RET
           ;
 S1COREPT: DEFB    6,0
           DEFB      0,-24,  0
@@ -3472,6 +3476,7 @@ S1SCOREM: DEFB    '1',98,60,'0',113,60,'0',128,60,'0',142,60
 ;---- STAGE2 PROGRAM ----
 ;
 STAGE2:   CALL    CLSPRI
+		  LD	  (STACK),SP
           LD      A,00001000B
           LD      (SWHICH),A
           CALL    DSET
@@ -4077,6 +4082,7 @@ S2FUNPD:  DEFB    4,0
 ;---- STAGE3 PROGRAM ----
 ;
 STAGE3:   CALL    CLSPRI
+		  LD      (STACK),SP
           LD      A,00001000B
           LD      (SWHICH),A
           CALL    DSET
@@ -4475,7 +4481,7 @@ S3BOSS:   LD      A,(SWHICH)
           LD      A,24
           CALL    SDOFF
           CALL    MAIN
-          RET ; JP STAGE4
+          RET
           ;
 S3CLPTR:  LD      A,(IX+1)
           INC     (IX+1)
@@ -4707,6 +4713,7 @@ S3BACURP: LD      A,(IX+10)
 ;---- STAGE4 PROGRAM ----
 ;
 STAGE4:   CALL    CLSPRI
+          LD	  (STACK),SP
           LD      A,00001000B
           LD      (SWHICH),A
           CALL    DSET
@@ -5112,7 +5119,7 @@ S4BOSM:   CALL    DSET
           LD      A,24
           CALL    SDOFF
           CALL    MAIN
-          JP      ENDING
+          RET
           ;
 S4COREPT: DEFB    6,0
           DEFB      0,-24,  0
