@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 1.2.4
+;  MSXPen LAST VERSION VER 1.2.5
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -25,7 +25,7 @@ EXPTBL:   EQU     0FCC1H
 ;
 ;---- SCREEN & COLOR SET ----
 ;
-          LD      A,(EXPTBL)
+START:    LD      A,(EXPTBL)
           LD      HL,0006H
           CALL    000CH
           LD      (RDVDP),A
@@ -58,7 +58,7 @@ EXPTBL:   EQU     0FCC1H
           OUT     (C),A
           EI
           ;
-          LD      (STACK),SP
+          LD      (SSTACK),SP
           JP      TITLE
 ;
 ;---- MAIN ROUTINE ----
@@ -69,13 +69,12 @@ MAIN:     PUSH    IX
           PUSH    BC
           ;
 MAINS:    PUSH    AF
-          JP      JPPOI
-          NOP
+          LD      IX,BREAKX
           LD      IY,(EXPTBL-1)
           CALL    CALSLT
           JP      C,RETURN
           ;
-JPPOI:    CALL    CLS
+          CALL    CLS
           LD      A,(SWHICH)
           BIT     0,A
           CALL    NZ,SCALE
@@ -141,17 +140,8 @@ M1MA3:    POP     AF
           POP     IX
           RET
           ;
-RETURN:   POP     AF
-          POP     HL
-          LD      A,15
-          LD      HL,0
-          LD      (0F3E9H),A
-          LD      (0F3EAH),HL
-          XOR     A
-          LD      IX,005FH
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          JP      103H
+RETURN:   LD      SP,(SSTACK)
+          JP      START
 ;
 ;---- PORY WRITE ----
 ;
@@ -1129,6 +1119,7 @@ WORK:     DEFS    3
 HYOUJI:   DEFS    120
 VIJUAL:   DEFB    0
 STACK:    DEFW    0
+SSTACK:   DEFW    0
 ;
 SCROLL:   DEFB    0,0
 SCOLOR:   DEFB    3,1
@@ -1784,6 +1775,7 @@ STICK:    PUSH    BC
           CALL    CALSLT
           OR      A
           JR      NZ,RETSTI
+          INC     A
           LD      IX,GTSTCK
           LD      IY,(EXPTBL-1)
           CALL    CALSLT
@@ -2072,6 +2064,28 @@ TECHRD:   DEFW    TECHPT,TECHMV
           DEFB    0,5,00000000B
           RET
           ;
+TUCH5:    CALL    ITEMGT
+		  CALL	  MOVESD
+          LD      A,(IX+13)
+          LD      DE,400
+          CP      8
+          JR      Z,M3TJ5
+          LD      DE,200
+          CP      7
+          JR      Z,M3TJ5
+          LD      DE,100
+          CP      3
+          JR      Z,M3TJ5
+          LD      DE,50
+M3TJ5:    LD      HL,(SCORE)
+          ADD     HL,DE
+          JR      NC,$+5
+          LD      HL,65535
+          LD      (SCORE),HL
+          XOR     A
+          LD      (IX+0),A
+          LD      (IX+2),A
+          RET
 ;
 ; MINING PARTYPA
 ;
@@ -2120,6 +2134,23 @@ PARMV:    LD      A,(IX+9)
           ADD     A,-24
           JP      NC,MALEND
           LD      (IX+9),A
+          RET
+          ;
+TUCH6:    CALL    ITEMGT
+          CALL    MOVESD
+          LD      A,(IX+14)
+          LD      DE,250
+          CP      6
+          JR      Z,$+5
+          LD      DE,500
+          LD      HL,(SCORE)
+          ADD     HL,DE
+          JR      NC,$+5
+          LD      HL,65535
+          LD      (SCORE),HL
+          XOR     A
+          LD      (IX+0),A
+          LD      (IX+2),A
           RET
 ;
 ; RUNDUM ROUTINE
@@ -2504,8 +2535,8 @@ LOSTI:    CALL    STRIG
           CALL    WSCORE
           JP      TITLE
           ;
-NEXTGO:   CALL    FADE
-		  CALL    ITEMGT
+NEXTGO:   CALL    ITEMGT
+          CALL    FADE
           LD      A,16
           CALL    MAIN
           JP      SELECT
@@ -3026,73 +3057,7 @@ GMOVER:   CALL    CLSPRI
 GMOVEM:   DEFB    'G',0,0,'A',30,0,'M',60,0,'E',90,0
           DEFB    'O',0,80,'V',30,80,'E',60,80,'R',90,80,0
          
-;
-; TUCH ROUTINE 5-8
-;
-TUCH5:    CALL    ITEMGT
-		  CALL	  MOVESD
-          LD      A,(IX+13)
-          LD      DE,400
-          CP      8
-          JR      Z,TDTJ5
-          LD      DE,200
-          CP      7
-          JR      Z,TDTJ5
-          LD      DE,100
-          CP      3
-          JR      Z,TDTJ5
-          LD      DE,50
-TDTJ5:    LD      HL,(SCORE)
-          ADD     HL,DE
-          JR      NC,$+5
-          LD      HL,65535
-          LD      (SCORE),HL
-          XOR     A
-          LD      (IX+0),A
-          LD      (IX+2),A
-          RET
-          ;
-TUCH6:    CALL    ITEMGT
-          CALL    MOVESD
-          LD      A,(IX+14)
-          LD      DE,250
-          CP      6
-          JR      Z,$+5
-          LD      DE,500
-          LD      HL,(SCORE)
-          ADD     HL,DE
-          JR      NC,$+5
-          LD      HL,65535
-          LD      (SCORE),HL
-          XOR     A
-          LD      (IX+0),A
-          LD      (IX+2),A
-          RET
-          ;
-TUCH7:	  CALL    TUCH2
-          LD      A,(MASTER+9)
-          XOR     127
-          ADD     A,17
-          LD      (MASTER+9),A
-          RET
-          ;
-TUCH8:    CALL    PISTOL
-	      LD      A,64
-          LD      (MASTER+8),A
-          LD      A,(IX+13)
-          CP      9
-          JR      NZ,$+8
-          LD      A,8
-          LD      (IX+13),A
-          RET
-          CP      8
-          JR      NZ,$+8
-          LD      A,6
-          LD      (IX+13),A
-          RET
-          XOR     A
-          LD      (IX+0),A
-          RET
+
 ;-----------------------------------------------------------
 ;
 ; STAGE 1
@@ -5121,6 +5086,31 @@ S4BOSM:   CALL    DSET
           CALL    MAIN
           RET
           ;
+TUCH7:	  CALL    TUCH2
+          LD      A,(MASTER+9)
+          XOR     127
+          ADD     A,17
+          LD      (MASTER+9),A
+          RET
+          ;
+TUCH8:    CALL    PISTOL
+	      LD      A,64
+          LD      (MASTER+8),A
+          LD      A,(IX+13)
+          CP      9
+          JR      NZ,$+8
+          LD      A,8
+          LD      (IX+13),A
+          RET
+          CP      8
+          JR      NZ,$+8
+          LD      A,6
+          LD      (IX+13),A
+          RET
+          XOR     A
+          LD      (IX+0),A
+          RET
+          ;
 S4COREPT: DEFB    6,0
           DEFB      0,-24,  0
           DEFB      0, 24,  0
@@ -5529,3 +5519,5 @@ S4MJIPTR: LD      A,(IX+7)
           XOR     15
           LD      (IX+7),A
           JP      MHYOUJ
+          ;
+ROCKEND:  EQU	  $
