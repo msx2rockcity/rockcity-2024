@@ -8,12 +8,12 @@ ROCKCITYの最終ソース（ステージセレクトなどが入ったバージ
 ステージセレクトらしいアセンブラソースは断片として見つかったので、それを利用して
 MSXPen上にステージセレクト有りのバージョンを再生しようとするのが、rockcity-2024です
 
-BASICに戻るバグは直りました。音声類は新たに追加している要素です。
-現在確認している残存バグは、モードセレクト時にジョイパッドが効かないバグ。ステージ4ボスのクリスタルの破壊アニメーションのバグです
+音声類は新たに追加している要素です。<BR>
+現在確認している残存バグはあと一つ、ステージ4ボスのクリスタルの破壊アニメーションのバグです
 
-2025/07/02 ver1.2.4 ステージをクリアするとBASICに戻るバグを修正。ステージ4をクリアするとプラクティスモードを抜けるようにオリジナルバイナリの動作から変更
+2025/07/09 ver1.2.5 <BR><BR>モードセレクト時にジョイパッドが効かないバグを修正。<BR>BREAKコマンド時、タイトル画面に戻るようにオリジナルバイナリから変更
 
-最終バージョンのMSXPen ver1.2.4
-https://msxpen.com/codes/-OUKLnjgiwtXhZKEpS7Y
+最終バージョンのMSXPen ver1.2.5
+https://msxpen.com/codes/-OUkjtu2H3ISxUTYMpTc
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
