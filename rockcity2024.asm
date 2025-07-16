@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 1.2.5
+;  MSXPen LAST VERSION VER 2.0.0
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -141,6 +141,7 @@ M1MA3:    POP     AF
           RET
           ;
 RETURN:   LD      SP,(SSTACK)
+          CALL    SDOFF
           JP      START
 ;
 ;---- PORY WRITE ----
@@ -5094,7 +5095,7 @@ TUCH7:	  CALL    TUCH2
           RET
           ;
 TUCH8:    CALL    PISTOL
-	      LD      A,64
+	      LD      A,32;64
           LD      (MASTER+8),A
           LD      A,(IX+13)
           CP      9
@@ -5108,7 +5109,11 @@ TUCH8:    CALL    PISTOL
           LD      (IX+13),A
           RET
           XOR     A
-          LD      (IX+0),A
+          LD      (IX+2),A
+          INC     A
+          LD      (IX+1),A
+          LD      A,00001000B
+          LD      (IX+15),A 
           RET
           ;
 S4COREPT: DEFB    6,0
