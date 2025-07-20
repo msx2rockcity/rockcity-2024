@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 2.0.0
+;  MSXPen LAST VERSION VER 2.0.1
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -3158,7 +3158,7 @@ S1JPDAT1: DEFW    TUCH0,TUCH1
           DEFW    TUCH2,TUCH3
           DEFW    TUCH4,TUCH5
           DEFW    TUCH6,TUCH6
-          DEFW    TUCH7,TUCH8
+          DEFW    TUCH17,TUCH18
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
@@ -3416,6 +3416,31 @@ S1LOOP9:  LD      A,1
           CALL    SDOFF
           RET
           ;
+TUCH17:	  CALL	  TUCH2
+          LD      A,(MASTER+9)
+          XOR     127
+          ADD     A,17
+          LD      (MASTER+9),A
+          RET
+          ;
+TUCH18    CALL    PISTOL
+          LD      A,64
+          LD      (MASTER+8),A
+          LD      A,(IX+13)
+          CP      9
+          JR      NZ,$+8
+          LD      A,8
+          LD      (IX+13),A
+          RET
+          CP      8
+          JR      NZ,$+8
+          LD      A,6
+          LD      (IX+13),A
+          RET
+          XOR     A
+          LD      (IX+0),A
+          RET
+          ;
 S1COREPT: DEFB    6,0
           DEFB      0,-24,  0
           DEFB      0, 24,  0
@@ -3562,7 +3587,7 @@ S2JPDAT1: DEFW    TUCH0,TUCH1
           DEFW    TUCH2,TUCH3
           DEFW    TUCH4,TUCH5
           DEFW    TUCH6,TUCH6
-          DEFW    TUCH7,TUCH8
+          DEFW    TUCH27,TUCH28
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
@@ -3841,7 +3866,31 @@ S2LOOP9:  LD      A,1
           CALL    MAIN
           RET
           ;
-
+TUCH27:   CALL    TUCH2
+          LD      A,(MASTER+9)
+          XOR     127
+          ADD     A,17
+          LD      (MASTER+9),A
+          RET
+          ;
+TUCH28:   CALL   PISTOL
+          LD     A,32
+          LD     (MASTER+8),A
+          LD     A,(IX+13)
+          CP     9
+          JR     NZ,$+8
+          LD     A,8
+          LD     (IX+13),A
+          RET
+          CP     8
+          JR     NZ,$+8
+          LD     A,6
+          LD     (IX+13),A
+          RET
+          XOR    A
+          LD     (IX+0),A
+          RET
+          ;       
 S2COREPT: DEFB    6,0
           DEFB      0,-24,  0
           DEFB      0, 24,  0
@@ -4838,7 +4887,7 @@ S4JPDAT1: DEFW    TUCH0,TUCH1
           DEFW    TUCH2,TUCH3
           DEFW    TUCH4,TUCH5
           DEFW    TUCH6,TUCH6
-          DEFW    TUCH7,TUCH8
+          DEFW    TUCH47,TUCH48
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
@@ -5087,15 +5136,15 @@ S4BOSM:   CALL    DSET
           CALL    MAIN
           RET
           ;
-TUCH7:	  CALL    TUCH2
+TUCH47:	  CALL    TUCH2
           LD      A,(MASTER+9)
           XOR     127
           ADD     A,17
           LD      (MASTER+9),A
           RET
           ;
-TUCH8:    CALL    PISTOL
-	      LD      A,32;64
+TUCH48:   CALL    PISTOL
+	      LD      A,32
           LD      (MASTER+8),A
           LD      A,(IX+13)
           CP      9
