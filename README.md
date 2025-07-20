@@ -8,11 +8,13 @@ ROCKCITYの最終ソース（ステージセレクトなどが入ったバージ
 ステージセレクトらしいアセンブラソースは断片として見つかったので、それを利用して
 MSXPen上にステージセレクト有りのバージョンを再生しようとするのが、rockcity-2024です
 
-音声類は新たに追加している要素です。<BR><BR>
 2024/07/17 ver2.0.0 <BR>最後の確認しているバグ、ステージ4ボスのクリスタルの破壊アニメーションのバグを修正しました<BR>
 今後は新規要素の追加をしていく予定です
 
-最終バージョンのMSXPen ver2.0.0
-https://msxpen.com/codes/-OVIfcci46f5Tfjj20Da
+2024/07/21 ver2.0.1 <BR>１面２面のクリスタル破壊アニメがおかしくなっていて、<BR>クリスタル破壊アニメーションの当たり処理（7番、8番当たり処理）がステージ毎に実装されていたことが判明し、<BR>
+その部分を昔のファイルから補完し直しました。これでようやく1996年バージョンの動作と同じになったと思います
+
+最終バージョンのMSXPen ver2.0.1
+https://msxpen.com/codes/-OVdhrdTscf5PWB7DrIV
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
