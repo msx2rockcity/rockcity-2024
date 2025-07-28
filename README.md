@@ -14,7 +14,10 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 2024/07/21 ver2.0.1 <BR>１面２面のクリスタル破壊アニメがおかしくなっていて、<BR>クリスタル破壊アニメーションの当たり処理（7番、8番当たり処理）がステージ毎に実装されていたことが判明し、<BR>
 その部分を昔のファイルから補完し直しました。これでようやく1996年バージョンの動作と同じになったと思います
 
-最終バージョンのMSXPen ver2.0.1
-https://msxpen.com/codes/-OVdhrdTscf5PWB7DrIV
+2024/07/27 ver2.0.2 <BR>人間キャラアニメーションを追加<BR><BR>
+2024/07/28 ver2.0.3 <BR>MSXロゴデモ追加
+
+最終バージョンのMSXPen ver2.0.3
+https://msxpen.com/codes/-OWET1KlpREJKlGZDrI1
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
