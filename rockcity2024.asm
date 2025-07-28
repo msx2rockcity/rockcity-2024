@@ -1,8 +1,8 @@
-;*********************************************************
+
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 2.0.1
+;  MSXPen LAST VERSION VER 2.0.3
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -59,7 +59,7 @@ START:    LD      A,(EXPTBL)
           EI
           ;
           LD      (SSTACK),SP
-          JP      TITLE
+          JP      LOGODEMO;TITLE
 ;
 ;---- MAIN ROUTINE ----
 ;
@@ -2088,7 +2088,7 @@ M3TJ5:    LD      HL,(SCORE)
           LD      (IX+2),A
           RET
 ;
-; MINING PARTYPA
+; MINING PARTY ROUTINE
 ;
 PARPD1:   DEFB    7,0
           DEFB    -12,  0,-12
@@ -2100,15 +2100,29 @@ PARPD1:   DEFB    7,0
           DEFB      0,-44,  0
           DEFB    1,2,3,1,4,2,0,3,4,5,6,7,0,0
           ;
-PARPD2:   DEFB    7,0
-          DEFB      0,-40,  0
-          DEFB     12,-40,  0
+PARPD2:   DEFB    9,0
           DEFB      0,-30,  0
-          DEFB    -12,-40,  0
-          DEFB      0,-20,  0
-          DEFB    -10,  0,  0
-          DEFB     10,  0,  0
-          DEFB    1,3,5,6,0,4,3,2,0,5,7,0,0
+          DEFB      0,-25,  0
+          DEFB     10,-20,  0
+          DEFB    -10,-35,  0
+          DEFB      0,-40,  0
+          DEFB     -5,-30,  0
+          DEFB      0,-15,  0
+          DEFB      5,  0,  0
+          DEFB     -5,  0,  0
+          DEFB    1,2,3,0,2,4,5,6,0,2,7,8,0,7,9,0,0
+          ;
+PARPD3:   DEFB    9,0
+		  DEFB      0,-30,  0
+          DEFB      0,-25,  0
+          DEFB     10,-35,  0
+          DEFB    -10,-20,  0
+          DEFB    -10,-30,  0
+          DEFB     -5,-25,  0
+          DEFB      0,-15,  0
+          DEFB      5,  0,  0
+          DEFB     -5,  0,  0
+          DEFB    1,2,3,0,2,4,5,6,0,2,7,8,0,7,9,0,0  
           ;
 PARTY:    CALL    RND
           CP      224
@@ -2118,11 +2132,14 @@ PARTY:    CALL    RND
           CALL    RND
           AND     7
           LD      HL,PARPD1
+          LD      DE,PARMV
           LD      C,7
-          JR      Z,$+7
+          JR      Z,PARJP1
           LD      HL,PARPD2
+          LD      DE,PARMV2
           LD      C,6
-          LD      (PARRD+0),HL
+PARJP1:   LD      (PARRD+0),HL
+          LD      (PARRD+2),DE
           LD      A,C
           LD      (PARRD+11),A
           CALL    DSET
@@ -2132,6 +2149,20 @@ PARRD:    DEFW    PARPD1,PARMV
           RET
           ;
 PARMV:    LD      A,(IX+9)
+          ADD     A,-24
+          JP      NC,MALEND
+          LD      (IX+9),A
+          RET
+          ;
+PARMV2:   LD      A,(IX+1)
+          INC     (IX+1)
+          LD      HL,PARPD2
+          AND     2
+          JR      Z,PARJP2
+          LD      HL,PARPD3
+PARJP2    LD      (IX+4),H
+          LD      (IX+3),L
+          LD      A,(IX+9)
           ADD     A,-24
           JP      NC,MALEND
           LD      (IX+9),A
@@ -2464,6 +2495,183 @@ DELAY_LOOP:
     		POP  BC
     		RET
 
+;------------------------------------------------
+;
+; LOGO DEMO Ç∆ÇËÇ†Ç¶Ç∏ê›íu
+;
+;------------------------------------------------
+;
+LOGODEMO: LD      IX,SCOLOR
+          LD      A,15
+          LD      (IX+0),A
+          LD      A,1
+          LD      (IX+1),A
+          LD      A,00001000B
+          LD      (IX+2),A
+          
+          CALL    CLSPRI
+          CALL    UNFADE
+          LD      A,8
+          CALL    MAIN
+          ;
+          CALL    DSET
+          DEFW    LOGODATA,LOGOMV2
+          DEFB    128,128,160,-30,0,0
+          DEFB    15,0,00101000B
+          ;
+          LD      A,30
+          CALL    MAIN
+          CALL    FADE
+          LD      A,10
+          CALL    MAIN
+          JP      TITLE
+          ;          
+LOGOMV11:  
+		  CALL    MOVE
+          DEFB   -1,0,20
+          DEFB    2,3,0
+          RET
+LOGOMV12:  
+		  CALL    MOVE
+          DEFB    0,1,19
+          DEFB    0,3,2
+          RET
+LOGOMV13:  
+		  CALL    MOVE
+          DEFB    1,0,22
+          DEFB    3,0,2
+          RET
+          ;
+LOGOMV2:  LD 	  A,(IX+9)
+		  CP      10
+          JR      Z,MV2JR
+		  CALL    MOVE
+          DEFB    0,0,-15
+          DEFB    3,-0,0
+MV2JR:    INC     (IX+1)
+          LD      A,(IX+1)
+          CP      20
+          JR      NZ,MV2JR2   
+          CALL    DSET
+          DEFW    LGMDATA,LOGOMV11
+          DEFB    58,128,10,0,0,0
+          DEFB    15,0,00101000B
+          CALL    DSET
+          DEFW    LGSDATA,LOGOMV12
+          DEFB    128,128,10,0,0,0
+          DEFB    15,0,00101000B
+          CALL    DSET
+          DEFW    LGXDATA,LOGOMV13
+          DEFB    193,128,10,0,0,0
+          DEFB    15,0,00101000B
+          JP      MALEND
+MV2JR2:   
+          CALL    DSET
+          DEFW    LGDEMOMJ,MHYOUJ
+          DEFB    15,0,0,0,0,0
+          DEFB    15,0,00010101B       
+          RET
+          
+LGDEMOMJ: DEFB 'M',16+46,160,'S',16+62,160,'X',16+78,160,'2',16+94,160,'G',16+126,160,'A',16+142,160,'M',16+158,160,'E',16+174,160,0 
+;
+;---- M POINT DATA ----
+;
+LGMDATA:  DEFB    13,0
+          DEFB	  -20,-40,0
+          DEFB    -40,+40,0
+          DEFB    -25,+40,0
+          DEFB    -15,  0,0
+          DEFB     -5,+40,0
+          DEFB     +5,+40,0
+          DEFB    +15,  0,0
+          DEFB    +25,+40,0
+          DEFB    +40,+40,0
+          DEFB    +20,-40,0 
+          DEFB    +10,-40,0
+          DEFB      0,  0,0
+          DEFB    -10,-40,0
+          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,13,1,0,0
+;
+;---- X POINT DATA ----
+;
+LGXDATA:  DEFB    12,0
+          DEFB	  -40,-40,0
+          DEFB    -10,  0,0
+          DEFB    -40,+40,0
+          DEFB    -20,+40,0
+          DEFB      0,+15,0
+          DEFB    +20,+40,0
+          DEFB    +40,+40,0
+          DEFB    +10,  0,0
+          DEFB    +40,-40,0
+          DEFB    +20,-40,0 
+          DEFB      0,-15,0
+          DEFB    -20,-40,0
+          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,1,0,0
+;
+;---- S POINT DATA ----
+;
+LGSDATA:  DEFB    14,0
+          DEFB	  -20,-40,0
+          DEFB    -40,-15,0
+          DEFB    -20,+10,0
+          DEFB    +20,+10,0
+          DEFB    +20,+20,0
+          DEFB    -40,+20,0
+          DEFB    -30,+40,0
+          DEFB    +20,+40,0
+          DEFB    +40,+15,0
+          DEFB    +20,-10,0 
+          DEFB    -15,-10,0
+          DEFB    -15,-20,0
+          DEFB    +40,-20,0
+          DEFB    +30,-40,0
+          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,13,14,1,0,0
+
+;
+;---- LOGO POINT DATA ----
+;
+LOGODATA: DEFB    35,0
+		  DEFB	  -90,-40,0
+          DEFB   -110,+40,0
+          DEFB    -95,+40,0
+          DEFB    -85,  0,0
+          DEFB    -75,+40,0          
+          DEFB    -65,+40,0
+          DEFB    -55,  0,0
+          DEFB    -45,+40,0
+          DEFB    +20,+40,0
+          DEFB    +35,+15,0
+          DEFB    +20,-10,0
+          DEFB    -15,-10,0
+          DEFB    -15,-20,0
+          DEFB    +40,-20,0
+          DEFB    +55,  0,0
+          DEFB    +25,+40,0
+          DEFB    +45,+40,0
+          DEFB	  +65,+15,0
+          DEFB    +85,+40,0
+          DEFB   +105,+40,0
+          DEFB    +75,  0,0
+          DEFB   +105,-40,0
+          DEFB    +85,-40,0
+          DEFB    +65,-15,0
+          DEFB    +45,-40,0
+          DEFB    -20,-40,0
+          DEFB    -35,-15,0
+          DEFB    -20,+10,0
+          DEFB    +15,+10,0
+          DEFB    +15,+20,0          
+          DEFB    -35,+20,0
+          DEFB    -50,-40,0
+          DEFB    -60,-40,0
+          DEFB    -70,  0,0
+          DEFB    -80,-40,0
+          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,13,14
+          DEFB    15,16,17,18,19,20,21,22,23,24,25
+          DEFB    26,27,28,29,30,31,32,33,34,35,1,0,0
+
+;
 ;------------------------------------------------
 ;
 ; TITLE DEMO
@@ -3229,7 +3437,7 @@ S1CHAPT2: DEFB    11,3
           DEFB     12, 48, 12
           DEFB     12, 48,-12
           DEFB      0, 24,  0
-          DEFB      0,-24,  0
+          DEFB      0,-24,  0          
           DEFB      0,  0,  0
           DEFB    1,2,3,4,1,5,6
           DEFB    7,8,5,0,4,8,0
