@@ -15,9 +15,10 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 その部分を昔のファイルから補完し直しました。これでようやく1996年バージョンの動作と同じになったと思います
 
 2024/07/27 ver2.0.2 <BR>人間キャラアニメーションを追加<BR><BR>
-2024/07/28 ver2.0.3 <BR>MSXロゴデモ追加
+2024/07/28 ver2.0.3 <BR>MSXロゴデモ追加<BR><BR>
+2024/07/30 ver2.1.0 <BR>ロゴデモ中右下にバージョン表示。<BR>ZONE2の十字架敵を2つの敵でつくっていたのを1つの敵で構成しなおした。<BR><BR>
 
-最終バージョンのMSXPen ver2.0.3
-https://msxpen.com/codes/-OWET1KlpREJKlGZDrI1
+最終バージョンのMSXPen ver2.1.0
+https://msxpen.com/codes/-OWNlOkk5HsOJ5f1dClb
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
