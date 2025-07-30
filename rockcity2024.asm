@@ -1,8 +1,8 @@
-
+;*********************************************************
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 2.0.3
+;  MSXPen LAST VERSION VER 2.1.0
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -21,6 +21,9 @@ BREAKX:   EQU     00B7H
 CALSLT:   EQU     001CH
 WRTPSG:   EQU	  0093H
 EXPTBL:   EQU     0FCC1H
+MJVER:    EQU     '2'
+MIVER:    EQU     '1'
+PTVER:    EQU     '0'
           ORG     09000H
 ;
 ;---- SCREEN & COLOR SET ----
@@ -2519,7 +2522,7 @@ LOGODEMO: LD      IX,SCOLOR
           DEFB    128,128,160,-30,0,0
           DEFB    15,0,00101000B
           ;
-          LD      A,30
+          LD      A,24
           CALL    MAIN
           CALL    FADE
           LD      A,10
@@ -2533,12 +2536,12 @@ LOGOMV11:
           RET
 LOGOMV12:  
 		  CALL    MOVE
-          DEFB    0,1,19
+          DEFB    0,1,20
           DEFB    0,3,2
           RET
 LOGOMV13:  
 		  CALL    MOVE
-          DEFB    1,0,22
+          DEFB    1,0,20
           DEFB    3,0,2
           RET
           ;
@@ -2548,9 +2551,10 @@ LOGOMV2:  LD 	  A,(IX+9)
 		  CALL    MOVE
           DEFB    0,0,-15
           DEFB    3,-0,0
-MV2JR:    INC     (IX+1)
+MV2JR:    
+          INC     (IX+1)
           LD      A,(IX+1)
-          CP      20
+          CP      16
           JR      NZ,MV2JR2   
           CALL    DSET
           DEFW    LGMDATA,LOGOMV11
@@ -2569,10 +2573,11 @@ MV2JR2:
           CALL    DSET
           DEFW    LGDEMOMJ,MHYOUJ
           DEFB    15,0,0,0,0,0
-          DEFB    15,0,00010101B       
+          DEFB    0,0,00010101B 
           RET
           
-LGDEMOMJ: DEFB 'M',16+46,160,'S',16+62,160,'X',16+78,160,'2',16+94,160,'G',16+126,160,'A',16+142,160,'M',16+158,160,'E',16+174,160,0 
+LGDEMOMJ: DEFB 'M',10+46,175,'S',10+62,175,'X',10+78,175,'2',10+94,175,'G',10+126,175,'A',10+142,175,'M',10+158,175,'E',10+174,175,'S',10+188,175
+		  DEFB MJVER,60+158,220,MIVER,60+170,220,PTVER,60+182,220,0
 ;
 ;---- M POINT DATA ----
 ;
@@ -2690,6 +2695,8 @@ TITLE:    LD      IX,SCOLOR
           ;
 MENSET:   CALL    CLSPRI
           CALL    UNFADE
+          
+          CALL    VERDISP
           LD      A,4
           CALL    MAIN
           CALL    DSSS   ;MOJI
@@ -2788,6 +2795,16 @@ MJIPAT:   LD      A,(IX+1)
           OR      00100101B
           LD      (IX+15),A
           JP      MHYOUJ
+          ;
+VERDISP:
+          CALL    DSET
+          DEFW    DEVVER,MHYOUJ
+          DEFB    80,0,0,0,0,80
+          DEFB    15,200,00010101B       
+          RET
+          
+DEVVER:   DEFB 'V',16+46,160,'E',16+62,160,'R',16+78,160
+		  DEFB	MJVER,16+126,160,MIVER,16+142,160,PTVER,0 
 ;
 ;---- TITLE DEMO PATERN ROUTINE ----
 ;
@@ -3878,32 +3895,52 @@ S2CHARA2: CALL    RND
           AND     31
           ADD     A,112
           LD      (S2CHARD2+4),A
-          LD      (S2CHAR22+4),A
           CALL    DSET
 S2CHARD2: DEFW    S2CHAPD2,S2CHARP2
           DEFB    128,128,245,0,0,0
           DEFB    12,2,00000010B
-          CALL    DSET
-S2CHAR22: DEFW    S2CHAPD2,S2CHARP2
-          DEFB    128,128,245,8,0,0
-          DEFB    12,2,00000010B
           RET
           ;
-S2CHAPD2: DEFB    11,3
-          DEFB     -8,-50, -8
+S2CHAPD2: DEFB    32,3
           DEFB     -8,-50,  8
           DEFB      8,-50,  8
-          DEFB      8,-50, -8
-          DEFB     -8, 50, -8
-          DEFB     -8, 50,  8
+          DEFB      8, -8,  8
+          DEFB     50, -8,  8
+          DEFB     50,  8,  8
+          DEFB      8,  8,  8
           DEFB      8, 50,  8
+          DEFB     -8, 50,  8
+          DEFB     -8,  8,  8
+          DEFB    -50,  8,  8
+          DEFB    -50, -8,  8
+          DEFB     -8, -8,  8
+          DEFB     -8,-50, -8
+          DEFB      8,-50, -8
+          DEFB      8, -8, -8
+          DEFB     50, -8, -8
+          DEFB     50,  8, -8
+          DEFB      8,  8, -8
           DEFB      8, 50, -8
-          DEFB      0, 24,  0
-          DEFB      0,-24,  0
-          DEFB      0,  0,  0
-          DEFB    1,2,3,4,1,5,6
-          DEFB    7,8,5,0,4,8,0
-          DEFB    3,7,0,2,6,0,0
+          DEFB     -8, 50, -8
+          DEFB     -8,  8, -8
+          DEFB    -50,  8, -8
+          DEFB    -50, -8, -8
+          DEFB     -8, -8, -8
+          
+          DEFB    -25,  0, -8
+          DEFB    -25,  0,  8
+          DEFB    -25,  0, -8
+          DEFB    -25,  0,  8
+          DEFB      0, 25, -8
+          DEFB      0, 25,  8
+          DEFB      0,-25, -8
+          DEFB      0,-25,  8
+         
+          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,1,0
+          DEFB    13,14,15,16,17,18,19,20,21,22,23,24,13,0
+          DEFB    1,13,0,2,14,0,3,15,0,4,16,0,5,17,0
+          DEFB    6,18,0,7,19,0,8,20,0,9,21,0,10,22,0
+          DEFB    11,23,0,12,24,0,0
           ;
 S2CHARP2: LD      A,(IX+13)
           XOR     15
