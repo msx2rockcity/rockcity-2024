@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 2.1.0
+;  MSXPen LAST VERSION VER 2.1.1
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -23,7 +23,7 @@ WRTPSG:   EQU	  0093H
 EXPTBL:   EQU     0FCC1H
 MJVER:    EQU     '2'
 MIVER:    EQU     '1'
-PTVER:    EQU     '0'
+PTVER:    EQU     '1'
           ORG     09000H
 ;
 ;---- SCREEN & COLOR SET ----
