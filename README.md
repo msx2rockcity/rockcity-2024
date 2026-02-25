@@ -20,9 +20,9 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 モデリングデータを変化させて1つの敵で構成しなおした。<BR><BR>
 
 2026/01/12 ver2.1.1 <BR>バグフィクスアップデート<BR>スプライトを完全OFFにするBASIC記述部分が間違えていたので修正<BR><BR>
-
+2026/02/25 ver変更なし<BR>Geminiでアセンブラソースのコア部分にコメントを入れてみた<BR><BR>
 
 最終バージョンのMSXPen ver2.1.1
-https://msxpen.com/codes/-OihbanX5hpKD0jYsWDk
+https://msxpen.com/codes/-OmH4s-1H-OuA7j6tHrC
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
