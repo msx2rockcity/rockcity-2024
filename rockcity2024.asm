@@ -28,374 +28,387 @@ PTVER:    EQU     '1'
 ;
 ;---- SCREEN & COLOR SET ----
 ;
-START:    LD      A,(EXPTBL)
-          LD      HL,0006H
-          CALL    000CH
-          LD      (RDVDP),A
-          LD      A,(EXPTBL)
-          LD      HL,0007H
-          CALL    000CH
-          LD      (RDVDP+1),A
-          LD      A,7
-          LD      (PLDAT),A
-          CALL    PALETE
+START:    LD      A,(EXPTBL)    ; メインスロットの拡張テーブルを取得
+          LD      HL,0006H      ; BIOSの「VDP読み取りポート」のアドレスを指定
+          CALL    000CH         ; RDSLT（他スロットのメモリ読み出し）をコール
+          LD      (RDVDP),A     ; 取得したVDP読み取りポート番号をメモリに保存
+          LD      A,(EXPTBL)    ; 再度、拡張テーブルを取得
+          LD      HL,0007H      ; BIOSの「VDP書き込みポート」のアドレスを指定
+          CALL    000CH         ; RDSLTを実行
+          LD      (RDVDP+1),A   ; 取得したVDP書き込みポート番号（#99等）を保存
+          LD      A,7           ; パレット番号7を指定
+          LD      (PLDAT),A     ; パレットデータのインデックスにセット
+          CALL    PALETE        ; 自作のパレット変更サブルーチンを呼ぶ
           ;
-          LD      A,15
-          LD      HL,0
-          LD      (0F3E9H),A
-          LD      (0F3EAH),HL
-          LD      A,(0FFE7H)
-          OR      00000010B
-          LD      (0FFE7H),A
-          LD      A,5
-          LD      IX,005FH
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
+          LD      A,15          ; 文字色（白に近い色）を15番に
+          LD      HL,0          ; 背景色と周辺色を0番（黒）に
+          LD      (0F3E9H),A    ; FORCLR（文字色）ワークエリアに書き込み
+          LD      (0F3EAH),HL   ; BAKCLR（背景）とBDRCLR（周辺）を一括書き込み
           ;
-          DI
-          LD      BC,(RDVDP+1)
-          INC     C
-          LD      A,22
-          OUT     (C),A
-          LD      A,23+80H
-          OUT     (C),A
-          EI
+          LD      A,(0FFE7H)    ; MSX2+以降の横方向スクロール等のフラグを取得
+          OR      00000010B     ; 第4ビット（VDP 60Hz/50Hz設定など）を操作
+          LD      (0FFE7H),A    ; ワークエリアを更新
           ;
-          LD      (SSTACK),SP
-          JP      LOGODEMO;TITLE
+          LD      A,5           ; SCREEN 5（256x212ドット、16色）を指定
+          LD      IX,005FH      ; BIOSのCHGMOD（画面モード変更）のアドレス
+          LD      IY,(EXPTBL-1) ; BIOSが載っているスロット情報を取得
+          CALL    CALSLT        ; インタースロットコールで画面をSCREEN 5に切り替え
+          ;
+          DI                    ; 割り込み禁止（デリケートなVDP操作開始）
+          LD      BC,(RDVDP+1)  ; VDPのコントロールポート（#99）をBCに
+          INC     C             ; ポートを微調整
+          LD      A,22          ; VDPレジスタ #22
+          OUT     (C),A         ; 書き込み先を指定
+          LD      A,23+80H      ; レジスタ #23（垂直オフセット）に80H（リセット等）を書き込み
+          OUT     (C),A         ; VDPに直接命令を送る
+          EI                    ; 割り込み許可
+          ;
+          LD      (SSTACK),SP   ; 現在のスタックポインタを保存（後で戻れるように）
+          JP      LOGODEMO      ; ロゴデモ（メイン処理）へ
 ;
 ;---- MAIN ROUTINE ----
 ;
-MAIN:     PUSH    IX
-          PUSH    HL
-          PUSH    DE
-          PUSH    BC
+MAIN:     PUSH    IX            ; メインに入る前のレジスタを全て保存
+          PUSH    HL            ; 
+          PUSH    DE            ; 
+          PUSH    BC            ; 
           ;
-MAINS:    PUSH    AF
-          LD      IX,BREAKX
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          JP      C,RETURN
+MAINS:    PUSH    AF            ; ループカウンタ(AF)を保存
+          LD      IX,BREAKX     ; 中断チェック用のルーチンアドレスを設定
+          LD      IY,(EXPTBL-1) ; BIOSの拡張スロットテーブルを参照
+          CALL    CALSLT        ; キー入力や割り込みによる中断を確認
+          JP      C,RETURN      ; キャリーが立てば（中断なら）終了処理へ
           ;
-          CALL    CLS
-          LD      A,(SWHICH)
-          BIT     0,A
-          CALL    NZ,SCALE
+          CALL    CLS           ; 非表示側の画面をクリア（消去）
+          LD      A,(SWHICH)    ; システムスイッチの状態をロード
+          BIT     0,A           ; bit0: スケーリング（拡大縮小）処理が必要か
+          CALL    NZ,SCALE      ; 必要なら拡大縮小計算を実行
           ;
-          BIT     1,A
-          JR      Z,M1MA0
-          LD      IX,MASTER
-          CALL    MALTI
-          BIT     2,A
-          CALL    NZ,MALTI
+          BIT     1,A           ; bit1: マスターオブジェクトの描画フラグ
+          JR      Z,M1MA0       ; 0ならスキップ
+          LD      IX,MASTER     ; 自機などのマスターオブジェクトをセット
+          CALL    MALTI         ; AI実行 ＆ 3D描画！
+          BIT     2,A           ; bit2: セカンドマスター（敵ボスなど）のフラグ
+          CALL    NZ,MALTI      ; 必要ならさらに描画
           ;
-M1MA0:    BIT     3,A
-          JR      Z,M1MA2
-          LD      HL,PORIDAT
-          LD      DE,16
-          LD      B,E
-          PUSH    AF
-M1MA1:    LD      A,(HL)
-          OR      A
-          JR      Z,$+8
-          PUSH    HL
-          POP     IX
-          CALL    MALTI
-          ADD     HL,DE
-          DJNZ    M1MA1
-          POP     AF
+M1MA0:    BIT     3,A           ; bit3: ポリス（ザコ敵や弾）の群れを描画するか
+          JR      Z,M1MA2       ; 0ならスキップ
+          LD      HL,PORIDAT    ; オブジェクト群のデータ先頭アドレス
+          LD      DE,16         ; 1オブジェクトあたりのワークサイズ（16バイト）
+          LD      B,E           ; ループ回数を16（最大数）に設定
+          PUSH    AF            ; フラグ退避
+M1MA1:    LD      A,(HL)        ; オブジェクトが有効(非0)かチェック
+          OR      A             ; 
+          JR      Z,$+8         ; 無効なら次のスロットへ
+          PUSH    HL            ; 
+          POP     IX            ; IXにワークのアドレスをセット
+          CALL    MALTI         ; AI実行 ＆ 3D描画！
+          ADD     HL,DE         ; 次のオブジェクトワークへ進む
+          DJNZ    M1MA1         ; 全スロット分繰り返す
+          POP     AF            ; フラグ復帰
           ;
-M1MA2:    BIT     6,A
-          CALL    NZ,WRLIFE
+M1MA2:    BIT     6,A           ; bit6: ライフゲージなどのUI表示フラグ
+          CALL    NZ,WRLIFE     ; 必要ならライフを描画
           ;
-          PUSH    AF
-          LD      A,(VIJUAL)
-          XOR     1
-          LD      (VIJUAL),A
+          ; --- VRAM表示ページの切り替え（ダブルバッファリング） ---
+          PUSH    AF            ; 
+          LD      A,(VIJUAL)    ; 現在の表示ページ（0 or 1）を取得
+          XOR     1             ; ページを反転
+          LD      (VIJUAL),A    ; 新しい表示ページを保存
           RRCA
           RRCA
-          RRCA
-          OR      00011111B
-          LD      BC,(RDVDP+1)
-          INC     C
-          DI
-          OUT     (C),A
-          LD      A,80H+2
-          OUT     (C),A
-          EI
-          POP     AF
+          RRCA                  ; ページ番号をVDPレジスタR#2のビット位置へ移動
+          OR      00011111B     ; 他のビットと合成（パターン名テーブルアドレス）
+          LD      BC,(RDVDP+1)  ; VDPポートアドレスを取得
+          INC     C             ; コントロールポートへ
+          DI                    ; レジスタ書き換え中の割り込みを禁止
+          OUT     (C),A         ; VDP R#2（表示ページ設定）を書き換え
+          LD      A,80H+2       ; レジスタ指定(R#2)
+          OUT     (C),A         ; 
+          EI                    ; 割り込み許可
+          POP     AF            ; 
           ;
-          BIT     4,A
-          JR      Z,M1MA3
-          LD      A,(LIFE)
-          OR      A
-          JR      NZ,M1MA3
-          LD      HL,(DEADRT)
-          JP      (HL)
+          BIT     4,A           ; bit4: ゲームオーバー判定フラグ
+          JR      Z,M1MA3       ; 
+          LD      A,(LIFE)      ; プレイヤーの残りライフを確認
+          OR      A             ; 
+          JR      NZ,M1MA3      ; ライフがあれば続行
+          LD      HL,(DEADRT)   ; 死亡時のジャンプ先アドレスをロード
+          JP      (HL)          ; 死亡処理ルーチンへ（南無！）
           ;
-M1MA3:    POP     AF
-          DEC     A
-          JP      NZ,MAINS
+M1MA3:    POP     AF            ; メインループの回数を確認
+          DEC     A             ; 
+          JP      NZ,MAINS      ; まだ回数があるならMAINSへ戻る
           ;
-          POP     BC
-          POP     DE
-          POP     HL
-          POP     IX
-          RET
+          POP     BC            ; 全てのレジスタを復帰
+          POP     DE            ; 
+          POP     HL            ; 
+          POP     IX            ; 
+          RET                   ; 呼び出し元へ戻る
           ;
-RETURN:   LD      SP,(SSTACK)
-          CALL    SDOFF
-          JP      START
+RETURN:   LD      SP,(SSTACK)   ; 中断時：スタックポインタを安全な場所へ戻す
+          CALL    SDOFF         ; サウンドなどを停止
+          JP      START         ; タイトル画面や最初へ戻る
 ;
 ;---- PORY WRITE ----
 ;
-MALTI:    PUSH    AF
-          PUSH    BC
-          PUSH    DE
-          PUSH    HL
-          LD      (MALRET+1),SP
-          LD      HL,PARET
-          PUSH    HL
-          LD      H,(IX+6)
-          LD      L,(IX+5)
-          JP      (HL)
-PARET:    BIT     0,(IX+15)
-          JP      NZ,MALRET
-          ;
-          XOR     A
-          LD      (IX+2),A
-          LD      L,(IX+3)
-          LD      H,(IX+4)
-          LD      B,(HL)
-          INC     HL
-          LD      C,(HL)
-          INC     HL
-          LD      DE,HYOUJI
-MLOOP:    PUSH    BC
-          PUSH    DE
-          PUSH    HL
-          PUSH    BC
-          PUSH    DE
-          LD      DE,WORK
-          CALL    TURN
-          POP     DE
-          POP     BC
-          LD      A,B
-          CP      C
-          LD      HL,WORK
-          CALL    NC,MONMAK
-          POP     HL
-          INC     HL
-          INC     HL
-          INC     HL
-          POP     DE
-          INC     DE
-          INC     DE
-          POP     BC
-          DJNZ    MLOOP
-          ;
-          PUSH    HL
-          CALL    TUCH
-          POP     BC
-SCREEN:   LD      A,(BC)
-          ADD     A,A
-          LD      HL,WORK+1
-          ADD     A,L
-          JR      NC,$+3
-          INC     H
-          LD      L,A
-          LD      D,(HL)
-          INC     HL
-          LD      E,(HL)
-M1SC1:    INC     BC
-          LD      A,(BC)
-          ADD     A,A
-          LD      HL,WORK+1
-          ADD     A,L
-          JR      NC,$+3
-          INC     H
-          LD      L,A
-          PUSH    DE
-          LD      D,(HL)
-          INC     HL
-          LD      E,(HL)
-          POP     HL
-          ;
-          LD      A,(IX+2)
-          OR      A
-          JR      NZ,BREAK
-          BIT     4,(IX+15)
-          JR      Z,M1SSET
-BREAK:    LD      A,R
-          AND     00011111B
-          RRA
-          JR      NC,$+4
-          NEG
-          ADD     A,D
-          LD      D,A
-          ADD     A,119
-          AND     00111111B
-          RRA
-          JR      NC,$+4
-          NEG
-          ADD     A,L
-          LD      L,A
-          ;
-M1SSET:   LD      (LIDAT),HL
-          LD      (LIDAT+2),DE
-          CALL    LINE
-          INC     BC
-          LD      A,(BC)
-          DEC     BC
-          OR      A
-          JR      NZ,M1SC1
-          INC     BC
-          INC     BC
-          LD      A,(BC)
-          OR      A
-          JR      NZ,SCREEN
-          POP     HL
-          POP     DE
-          POP     BC
-          POP     AF
-          RET
-          ;
-MALEND:   XOR     A
-          LD      (IX+0),A
-MALRET:   LD      SP,0
-          POP     HL
-          POP     DE
-          POP     BC
-          POP     AF
-          RET
+MALTI:    PUSH    AF            ; レジスタをすべて保存
+          PUSH    BC            ; 
+          PUSH    DE            ; 
+          PUSH    HL            ; 
+          LD      (MALRET+1),SP ; 現在のスタックポインタを保存（強制復帰用）
+          LD      HL,PARET      ; 戻り先をPARETに設定して
+          PUSH    HL            ; スタックに積む
+          LD      H,(IX+6)      ; オブジェクト固有のAIルーチン
+          LD      L,(IX+5)      ; アドレッシングをロード
+          JP      (HL)          ; 固有ルーチン（移動計算など）を実行
+
+PARET:    BIT     0,(IX+15)     ; 描画禁止フラグをチェック
+          JP      NZ,MALRET     ; フラグが立っていれば描画せずに終了へ
+          ; --- 3D頂点変換開始 ---
+          XOR     A             ; A=0
+          LD      (IX+2),A      ; 画面外フラグなどをクリア
+          LD      L,(IX+3)      ; 3Dモデルデータの開始アドレス
+          LD      H,(IX+4)      ; 
+          LD      B,(HL)        ; 頂点数をBにロード
+          INC     HL            ; 
+          LD      C,(HL)        ; 面（または線）の定義数をCにロード
+          INC     HL            ; 
+          LD      DE,HYOUJI     ; 座標変換後の格納先アドレス
+MLOOP:    PUSH    BC            ; ループカウンタ保存
+          PUSH    DE            ; 
+          PUSH    HL            ; 頂点データポインタ保存
+          PUSH    BC            ; 
+          PUSH    DE            ; 
+          LD      DE,WORK       ; 変換用の一時ワーク
+          CALL    TURN          ; ★前述の回転・スケーリング・投影を実行！
+          POP     DE            ; 
+          POP     BC            ; 
+          LD      A,B           ; 
+          CP      C             ; 
+          LD      HL,WORK       ; 
+          CALL    NC,MONMAK     ; 座標を2D画面座標系へ変換
+          POP     HL            ; 
+          INC     HL            ; 次の頂点データへ（X, Y, Zの3バイト分）
+          INC     HL            ; 
+          INC     HL            ; 
+          POP     DE            ; 
+          INC     DE            ; 表示用ワークのポインタ更新
+          INC     DE            ; 
+          POP     BC            ; 
+          DJNZ    MLOOP         ; 全頂点の変換が終わるまでループ
+          ; --- 線引き（コネクト）開始 ---
+          PUSH    HL            ; 接続リストのポインタを保存
+          CALL    TUCH          ; 描画準備
+          POP     BC            ; 接続リスト（BC）
+SCREEN:   LD      A,(BC)        ; 始点となる頂点番号をロード
+          ADD     A,A           ; 1点2バイトなので2倍
+          LD      HL,WORK+1     ; 変換済み座標テーブルを参照
+          ADD     A,L           ; 
+          JR      NC,$+3        ; 
+          INC     H             ; 
+          LD      L,A           ; 
+          LD      D,(HL)        ; D = 始点X
+          INC     HL            ; 
+          LD      E,(HL)        ; E = 始点Y
+M1SC1:    INC     BC            ; 次の頂点番号へ
+          LD      A,(BC)        ; 終点となる頂点番号をロード
+          ADD     A,A           ; 
+          LD      HL,WORK+1     ; 
+          ADD     A,L           ; 
+          JR      NC,$+3        ; 
+          INC     H             ; 
+          LD      L,A           ; 
+          PUSH    DE            ; 始点を保存
+          LD      D,(HL)        ; D = 終点X
+          INC     HL            ; 
+          LD      E,(HL)        ; E = 終点Y
+          POP     HL            ; HL = 始点座標(X,Y)
+          ; --- 爆発・破壊演出（BREAK） ---
+          LD      A,(IX+2)      ; オブジェクトの状態をチェック
+          OR      A             ; 
+          JR      NZ,BREAK      ; 破壊フラグがあれば火花散らしへ
+          BIT     4,(IX+15)     ; 特殊エフェクトビット
+          JR      Z,M1SSET      ; 通常時はそのまま線引きへ
+BREAK:    LD      A,R           ; ★CPUのRレジスタ（乱数）を取得！
+          AND     00011111B     ; 5bitにマスク
+          RRA                   ; 
+          JR      NC,$+4        ; 
+          NEG                   ; ランダムに符号反転
+          ADD     A,D           ; X座標をランダムに揺らす
+          LD      D,A           ; 
+          ADD     A,119         ; 適当なオフセットでYも揺らす
+          AND     00111111B     ; 
+          RRA                   ; 
+          JR      NC,$+4        ; 
+          NEG                   ; 
+          ADD     A,L           ; 
+          LD      L,A           ; 
+          ; --- VRAMへ描画命令発行 ---
+M1SSET:   LD      (LIDAT),HL    ; 始点をセット
+          LD      (LIDAT+2),DE  ; 終点をセット
+          CALL    LINE          ; ★VDPに線を引く（MSX2のLINE相当）
+          INC     BC            ; 
+          LD      A,(BC)        ; 接続データが続くか確認
+          DEC     BC            ; 
+          OR      A             ; 
+          JR      NZ,M1SC1      ; 0でなければ現在の始点からさらに線を引く
+          INC     BC            ; 
+          INC     BC            ; 
+          LD      A,(BC)        ; 次の図形があるか
+          OR      A             ; 
+          JR      NZ,SCREEN     ; 0でなければ次のポリゴン（線リスト）へ
+          POP     HL            ; 
+          POP     DE            ; 
+          POP     BC            ; 
+          POP     AF            ; 
+          RET                   ; 
+
+MALEND:   XOR     A             ; オブジェクト消去処理
+          LD      (IX+0),A      ; ワークの先頭を0にして「空き」にする
+MALRET:   LD      SP,0          ; スタックポインタを保存した値で復帰（自己書き換え）
+          POP     HL            ; レジスタ復帰
+          POP     DE            ; 
+          POP     BC            ; 
+          POP     AF            ; 
+          RET                   ;
 ;
 ; POINT TURN
 ;
-TURN:     PUSH    DE
-          LD      B,(HL)
-          INC     HL
-          LD      C,(HL)
-          INC     HL
-          LD      A,(IX+10)
-          AND     00011111B
-          CALL    NZ,KAITEN
-          LD      D,B
-          LD      B,(HL)
-          LD      A,(IX+11)
-          AND     00011111B
-          CALL    NZ,KAITEN
-          LD      E,C
-          LD      C,B
-          LD      B,D
-          LD      A,(IX+12)
-          AND     00011111B
-          CALL    NZ,KAITEN
-          POP     HL
-          BIT     1,(IX+15)
-          JR      Z,$+8
+; 頂点の3軸回転ルーチン
+;
+TURN:     PUSH    DE            ; レジスタDEを保護
+          LD      B,(HL)        ; 頂点データの第1成分(X)をBにロード
+          INC     HL            ; ポインタを次の成分へ
+          LD      C,(HL)        ; 頂点データの第2成分(Y)をCにロード
+          INC     HL            ; ポインタを次の成分へ
+          ; --- 第1平面の回転 ---
+          LD      A,(IX+10)     ; オブジェクトの回転角(1軸目)を取得
+          AND     00011111B     ; 32段階(5bit)に制限
+          CALL    NZ,KAITEN     ; 角度があれば回転演算を実行
+          ; --- 座標を入れ替えて第2平面の回転 ---
+          LD      D,B           ; 計算結果のBをDへ退避
+          LD      B,(HL)        ; 頂点データの第3成分(Z)をBにロード
+          LD      A,(IX+11)     ; 回転角(2軸目)を取得
+          AND     00011111B     ; 
+          CALL    NZ,KAITEN     ; 2軸目の回転を実行
+          ; --- 座標を並べ替えて第3平面の回転 ---
+          LD      E,C           ; 
+          LD      C,B           ; 
+          LD      B,D           ; 各成分を各軸の役割に振り直す
+          LD      A,(IX+12)     ; 回転角(3軸目)を取得
+          AND     00011111B     ; 
+          CALL    NZ,KAITEN     ; 3軸目の回転を実行
+          ; --- 仕上げ：スケーリング調整 ---
+          POP     HL            ; 頂点データポインタを復帰
+          BIT     1,(IX+15)     ; 拡大ビット(bit1)をチェック
+          JR      Z,$+8         ; 立っていなければジャンプ
           SLA     B
           SLA     C
-          SLA     E
-          BIT     2,(IX+15)
-          JR      Z,$+8
+          SLA     E             ; 各座標を2倍にする(左シフト)
+          BIT     2,(IX+15)     ; 縮小ビット(bit2)をチェック
+          JR      Z,$+8         ; 立っていなければジャンプ
           SRA     B
           SRA     C
-          SRA     E
-          JP      SEARCH
+          SRA     E             ; 各座標を1/2にする(符号付き右シフト)
+          JP      SEARCH        ; 回転後の座標(B,C,E)を投影ルーチンへ渡す
           ;
-KAITEN:   PUSH    DE
-          PUSH    HL
-          LD      HL,SINDAT
-          ADD     A,A
-          ADD     A,L
-          JR      NC,$+3
-          INC     H
-          LD      L,A
-          LD      D,(HL)
-          INC     HL
-          LD      E,(HL)
-          LD      A,D
-          LD      H,B
-          OR      A
-          CALL    NZ,TIMES
-          LD      L,A
-          LD      A,E
-          LD      H,C
-          OR      A
-          CALL    NZ,TIMES
-          LD      H,A
-          PUSH    HL
-          LD      A,D
-          LD      H,C
-          OR      A
-          CALL    NZ,TIMES
-          LD      L,A
-          LD      A,E
-          LD      H,B
-          OR      A
-          CALL    NZ,TIMES
-          SUB     L
-          LD      B,A
-          POP     HL
-          LD      A,H
-          ADD     A,L
-          LD      C,A
-          POP     HL
-          POP     DE
-          RET
+KAITEN:   PUSH    DE            ; レジスタDEを保護
+          PUSH    HL            ; 頂点ポインタを保護
+          LD      HL,SINDAT     ; サインテーブルの先頭アドレスをセット
+          ADD     A,A           ; 1角度につき2バイト(sin/cos)なので角度を2倍
+          ADD     A,L           ; 下位アドレス加算
+          JR      NC,$+3        ; 桁上げがなければジャンプ
+          INC     H             ; 桁上げがあれば上位アドレス加算
+          LD      L,A           ; HL = 参照するサインデータのアドレス
+          LD      D,(HL)        ; D = sinθ を取得
+          INC     HL            ; 
+          LD      E,(HL)        ; E = cosθ を取得
+          ; --- 積和計算：第1成分 ---
+          LD      A,D           ; sinθをAへ
+          LD      H,B           ; 座標1をHへ
+          OR      A             ; 0チェック
+          CALL    NZ,TIMES      ; 座標1 * sinθ を計算
+          LD      L,A           ; 結果をLへ
+          LD      A,E           ; cosθをAへ
+          LD      H,C           ; 座標2をHへ
+          OR      A             ; 
+          CALL    NZ,TIMES      ; 座標2 * cosθ を計算
+          LD      H,A           ; 結果をHへ
+          PUSH    HL            ; (成分1, 成分2)の中間結果を保存
+          ; --- 積和計算：第2成分 ---
+          LD      A,D           ; sinθ
+          LD      H,C           ; 座標2
+          OR      A             ; 
+          CALL    NZ,TIMES      ; 座標2 * sinθ
+          LD      L,A           ; 
+          LD      A,E           ; cosθ
+          LD      H,B           ; 座標1
+          OR      A             ; 
+          CALL    NZ,TIMES      ; 座標1 * cosθ
+          SUB     L             ; A = Xcos - Ysin (回転の基本公式)
+          LD      B,A           ; 新しい座標1を確定
+          POP     HL            ; 中間結果を復帰
+          LD      A,H           ; 
+          ADD     A,L           ; A = Ycos + Xsin
+          LD      C,A           ; 新しい座標2を確定
+          POP     HL            ; ポインタ復帰
+          POP     DE            ; 
+          RET                   ; 戻る
           ;
-TIMES:    INC     H
-          DEC     H
-          JR      NZ,$+4
-          XOR     A
-          RET
-          PUSH    HL
-          PUSH    BC
-          PUSH    DE
-          LD      D,0
-          LD      E,H
-          LD      HL,0
-          SLA     A   ;SIN<0
-          LD      B,A
-          JR      NC,$+5
-          LD      HL,NNEG
-          LD      (NEGPAT),HL
-          LD      HL,0
-          LD      A,E
-          OR      A
-          JP      P,$+8
-          LD      HL,NNEG
-          NEG
-          LD      (NEGPT2),HL
-          LD      E,A
-          LD      A,B
-          CP      0FEH  ;SIN=1
-          JR      NZ,$+5
-          LD      A,E
-          JR      NEGPAT
-          LD      HL,0
-          LD      B,8
-M1LP2:    RRA
-          JR      NC,$+3
-          ADD     HL,DE
-          SLA     E
-          RL      D
-          DJNZ    M1LP2
-          LD      A,H
-NEGPAT:   NOP
-          NOP
-NEGPT2:   NOP
-          NOP
-          POP     DE
-          POP     BC
-          POP     HL
-          RET
+TIMES:    INC     H             ; 座標値Hが0かどうかをチェック
+          DEC     H             ; 
+          JR      NZ,$+4        ; 0でなければ演算開始
+          XOR     A             ; 0なら結果も0
+          RET                   ; 
+          PUSH    HL            ; レジスタ退避
+          PUSH    BC            ; 
+          PUSH    DE            ; 
+          LD      D,0           ; 加算用上位レジスタをクリア
+          LD      E,H           ; DE = 座標値
+          LD      HL,0          ; 計算用ワークをリセット
+          SLA     A             ; A(sin値)の正負を確認(bit7をキャリーへ)
+          LD      B,A           ; AをBに待避
+          JR      NC,$+5        ; 正ならスキップ
+          LD      HL,NNEG       ; ★負なら計算後に反転処理(NNEG)へ飛ばす準備
+          LD      (NEGPAT),HL   ; ★自己書き換え：NOPをJP NNEG等に変える
+          LD      HL,0          ; 
+          LD      A,E           ; 座標値
+          OR      A             ; 
+          JP      P,$+8         ; 座標が正ならスキップ
+          LD      HL,NNEG       ; ★座標も負なら反転準備
+          NEG                   ; 座標値を正の数にする
+          LD      (NEGPT2),HL   ; ★自己書き換え箇所の設定
+          LD      E,A           ; DEに正体化した値をセット
+          LD      A,B           ; サイン値を戻す
+          CP      0FEH          ; 1.0(127)に近いかチェック？
+          JR      NZ,$+5        ; 1.0でなければ通常ループ
+          LD      A,E           ; 1.0倍ならそのまま返す
+          JR      NEGPAT        ; 終了処理へ
+          ; --- ビットシフト加算ループ ---
+          LD      HL,0          ; 
+          LD      B,8           ; 8ビット分ループ
+M1LP2:    RRA                   ; 倍率Aを右シフトして1ビットずつ確認
+          JR      NC,$+3        ; ビットが立っていなければ加算スキップ
+          ADD     HL,DE         ; ビットが立っていれば加算
+          SLA     E             ; 次のビットのために2倍にする
+          RL      D             ; 
+          DJNZ    M1LP2         ; 8回繰り返す
+          LD      A,H           ; 上位8bitを固定小数点の計算結果として採用
+NEGPAT:   NOP                   ; ★実行時に反転命令が書き込まれる場所
+          NOP                   ; 
+NEGPT2:   NOP                   ; ★同様
+          NOP                   ; 
+          POP     DE            ; レジスタ復帰
+          POP     BC            ; 
+          POP     HL            ; 
+          RET                   ; 戻る
 SINDAT:
-DEFB        0,127, 25,126
-DEFB       49,119, 71,107
-DEFB       91, 91,107, 71
-DEFB      119, 49,126, 25
-DEFB      127,  0,126,153
+DEFB        0,127,  25,126   ; 0度(sin 0, cos 1.0), 11.25度
+DEFB       49,119,  71,107   ; 22.5度, 33.75度
+DEFB       91, 91, 107, 71   ; 45度(sin 0.7, cos 0.7), 56.25度
+DEFB      119, 49, 126, 25   ; 67.5度, 78.75度
+DEFB      127,  0, 126,153   ; 90度(sin 1.0, cos 0), 101.25度...
 DEFB      119,177,107,199
 DEFB       91,219, 71,235
 DEFB       49,247, 25,254
@@ -410,255 +423,272 @@ DEFB      177,119,153,126
 ;
 ; SEARCH IN GAGE
 ;
-SEARCH:   LD      D,B
-          LD      A,B
-          ADD     A,(IX+7)
-          EX      AF,AF'
-          RL      D
-          JR      NC,$+7
-          EX      AF,AF'
-          JR      NC,SERRET
-          JR      $+5
-          EX      AF,AF'
-          JR      C,SERRET
-          LD      (HL),A
-          INC     HL
-          LD      D,E
-          LD      A,E
-          ADD     A,(IX+8)
-          EX      AF,AF'
-          RL      D
-          JR      NC,$+7
-          EX      AF,AF'
-          JR      NC,SERRET
-          JR      $+5
-          EX      AF,AF'
-          JR      C,SERRET
-          LD      (HL),A
-          INC     HL
-          SRA     C
-          LD      D,C
-          LD      A,C
-          ADD     A,(IX+9)
-          EX      AF,AF'
-          RL      D
-          JR      NC,$+7
-          EX      AF,AF'
-          JR      NC,SERRET
-          JR      $+5
-          EX      AF,AF'
-          JR      C,SERRET
-          LD      (HL),A
-          BIT     3,(IX+15)
-          RET     NZ
-          ;
-          LD      DE,GAGE+5
-          EX      DE,HL
-          CP      (HL)
-          RET     NC
-          DEC     HL
-          CP      (HL)
-          RET     C
-          LD      A,(IX+2)
-          OR      A
-          RET     NZ
-          EX      DE,HL
-          DEC     DE
-          DEC     HL
-          LD      A,(DE)
-          CP      (HL)
-          RET     C
-          DEC     DE
-          LD      A,(DE)
-          CP      (HL)
-          RET     NC
-          DEC     DE
-          DEC     HL
-          LD      A,(DE)
-          CP      (HL)
-          RET     C
-          DEC     DE
-          LD      A,(DE)
-          CP      (HL)
-          RET     NC
-          LD      A,1
-          LD      (IX+2),A
-          RET
-          ;
-SERRET:   BIT     5,(IX+15)
-          JP      Z,MALEND
-          JP      MALRET
+; 当たり判定ルーチン
+;
+SEARCH:   LD      D,B           ; X軸：相対座標BをDにコピー（符号チェック用）
+          LD      A,B           ; 相対座標BをAへ
+          ADD     A,(IX+7)      ; 相対座標 + 中心座標 = 絶対座標を算出
+          EX      AF,AF'        ; 計算結果（フラグ込）を裏レジスタへ退避
+          RL      D             ; D（元の相対値）を回転させ符号をキャリーへ
+          JR      NC,$+7        ; 正の数なら前進（クリッピング判定へ）
+          EX      AF,AF'        ; 負の場合：裏レジスタから計算結果を戻す
+          JR      NC,SERRET     ; 0未満（画面外左）なら中断処理へ
+          JR      $+5           ; 
+          EX      AF,AF'        ; 正の場合：裏レジスタから計算結果を戻す
+          JR      C,SERRET      ; 255を超えた（画面外右）なら中断処理へ
+          LD      (HL),A        ; 画面内なら2D座標バッファ(HL)に保存
+          INC     HL            ; 次の格納先（Y座標）へ
+
+          LD      D,E           ; Y軸：相対座標EをDにコピー
+          LD      A,E           ; 
+          ADD     A,(IX+8)      ; 相対座標 + 中心座標 = 絶対座標
+          EX      AF,AF'        ; 裏レジスタへ退避
+          RL      D             ; 符号チェック
+          JR      NC,$+7        ; 
+          EX      AF,AF'        ; 
+          JR      NC,SERRET     ; 0未満（画面外上）なら中断へ
+          JR      $+5           ; 
+          EX      AF,AF'        ; 
+          JR      C,SERRET      ; 画面外下なら中断へ
+          LD      (HL),A        ; 画面内ならバッファに保存
+          INC     HL            ; 次の格納先（Z座標）へ
+
+          SRA     C             ; Z軸：奥行きCを右シフト（半分にする、あるいは精度調整）
+          LD      D,C           ; 
+          LD      A,C           ; 
+          ADD     A,(IX+9)      ; 相対距離 + 中心距離
+          EX      AF,AF'        ; 裏レジスタへ退避
+          RL      D             ; 符号チェック
+          JR      NC,$+7        ; 
+          EX      AF,AF'        ; 
+          JR      NC,SERRET     ; 奥行きがマイナスなら中断
+          JR      $+5           ; 
+          EX      AF,AF'        ; 
+          JR      C,SERRET      ; 遠すぎたら中断
+          LD      (HL),A        ; Z座標を保存
+
+          BIT     3,(IX+15)     ; フラグチェック（判定スキップ設定か？）
+          RET     NZ            ; スキップならここで終了
+
+          ; --- ここから当たり判定 (GAGEとの照合) ---
+          LD      DE,GAGE+5     ; 判定範囲データ(GAGE)の末尾（Z最大）を指定
+          EX      DE,HL         ; HLをGAGEポインタ、DEを現在の座標ポインタに
+          CP      (HL)          ; A（頂点Z）と GAGE+5（Z最大）を比較
+          RET     NC            ; Zが最大値を超えていればリターン
+          DEC     HL            ; GAGE+4（Z最小）を指す
+          CP      (HL)          ; 比較
+          RET     C             ; Zが最小値に届いていなければリターン
+
+          LD      A,(IX+2)      ; 当たりフラグ用ワークエリアを取得
+          OR      A             ; 
+          RET     NZ            ; すでに「当たり」なら重複を避けてリターン
+
+          EX      DE,HL         ; ポインタを入れ替え（DE=GAGE, HL=頂点バッファ）
+          DEC     DE            ; GAGEポインタをY最大へ
+          DEC     HL            ; 頂点ポインタをY座標へ
+          LD      A,(DE)        ; GAGEのY最大値をロード
+          CP      (HL)          ; 頂点Yと比較
+          RET     C             ; 範囲外ならリターン
+          DEC     DE            ; GAGEポインタをY最小へ
+          LD      A,(DE)        ; GAGEのY最小値をロード
+          CP      (HL)          ; 頂点Yと比較
+          RET     NC            ; 範囲外ならリターン
+
+          DEC     DE            ; GAGEポインタをX最大へ
+          DEC     HL            ; 頂点ポインタをX座標へ
+          LD      A,(DE)        ; GAGEのX最大値をロード
+          CP      (HL)          ; 頂点Xと比較
+          RET     C             ; 範囲外ならリターン
+          DEC     DE            ; GAGEポインタをX最小へ
+          LD      A,(DE)        ; GAGEのX最小値をロード
+          CP      (HL)          ; 頂点Xと比較
+          RET     NC            ; 範囲外ならリターン
+
+          LD      A,1           ; 全ての条件をクリア！「当たり」の「1」をセット
+          LD      (IX+2),A      ; ワークエリアの+2番目に「当たり」を記録
+          RET                   ; 終了
+
+SERRET:   BIT     5,(IX+15)     ; 画面外へ消えた時の特殊処理フラグ確認
+          JP      Z,MALEND      ; フラグがなければ終了処理へ
+          JP      MALRET        ; フラグがあれば復帰ルーチンへ
 ;
 ; TUCH ROUTINE
 ;
-TUCH:     LD      H,0
-          LD      L,(IX+13)
-          LD      (LIDAT+4),HL
-          LD      A,(IX+2)
-          OR      A
-          RET     Z
+; 当たった物体のタイプ毎に違う処理へジャンプする
+;
+TUCH:     LD      H,0           ; 描画色の設定準備（上位バイトを0に）
+          LD      L,(IX+13)     ; ワークエリアの+13番目から「オブジェクトの色」をロード
+          LD      (LIDAT+4),HL  ; LINEコマンド用の色指定エリア(LIDAT+4)へ格納
+          LD      A,(IX+2)      ; 前のSEARCHルーチンで書き込まれた「当たりフラグ」をロード
+          OR      A             ; フラグが0（当たっていない）かどうかチェック
+          RET     Z             ; 当たっていなければ、何もせずメインループへ戻る
+          ; --- ここから「当たった時」の処理 ---
+          LD      HL,JPTUCH     ; ジャンプ先のアドレスが並んでいるテーブルの先頭をセット
+          LD      A,(IX+14)     ; オブジェクトの種類（ID）をロード
+          AND     15            ; 下位4ビット（0?15の範囲）に限定する
+          ADD     A,A           ; 2倍にする（アドレスは2バイト単位なのでオフセット計算）
+          LD      E,A           ; 計算したオフセットをDEレジスタの下位へ
+          LD      D,0           ; 上位Dを0に
+          ADD     HL,DE         ; テーブルの先頭アドレス + オブセット = 目的のデータ位置
+          LD      E,(HL)        ; テーブルからジャンプ先アドレスの下位バイトを読み出す
+          INC     HL            ; 次のバイトへ
+          LD      D,(HL)        ; ジャンプ先アドレスの上位バイトを読み出す
+          EX      DE,HL         ; 読み出したジャンプ先アドレスをHLレジスタへ入れ替え
+          JP      (HL)          ; 確定したアドレス（爆発や消滅処理など）へジャンプ！
           ;
-          LD      HL,JPTUCH
-          LD      A,(IX+14)
-          AND     15
-          ADD     A,A
-          LD      E,A
-          LD      D,0
-          ADD     HL,DE
-          LD      E,(HL)
-          INC     HL
-          LD      D,(HL)
-          EX      DE,HL
-          JP      (HL)
-          ;
-JPTUCH:   DEFS    32
+JPTUCH:   DEFS    32            ; ジャンプテーブル本体（16個分のサブルーチンアドレスを格納）
 ;
 ; MONITOR POINT
 ;
-MONMAK:   LD      A,(HL)
-          LD      C,0
-          INC     HL
-          INC     HL
-          ADD     A,(HL)
-          RL      C
-          ADD     A,(HL)
-          JR      NC,$+3
-          INC     C
-          RR      C
-          RRA
-          RR      C
-          RRA
-          RR      C
-          LD      B,A
-          PUSH    DE
-          LD      D,0
-          LD      A,(HL)
-          ADD     A,64
-          RL      D
-          LD      E,A
-          CALL    WARIZU
-          POP     DE
-          LD      (DE),A
-          DEC     HL
-          INC     DE
-          LD      A,(HL)
-          LD      C,0
-          INC     HL
-          ADD     A,(HL)
-          RL      C
-          ADD     A,(HL)
-          JR      NC,$+3
-          INC     C
-          RR      C
-          RRA
-          RR      C
-          RRA
-          RR      C
-          LD      B,A
-          PUSH    DE
-          LD      D,0
-          LD      A,(HL)
-          ADD     A,64
-          RL      D
-          LD      E,A
-          CALL    WARIZU
-          POP     DE
-          LD      (DE),A
-          RET
+; 画面座標生成ルーチン
+;
+MONMAK:   LD      A,(HL)        ; 3Dデータの「X座標」をAレジスタに読み込む
+          LD      C,0           ; 16ビット演算・シフト用のワークレジスタCを0に
+          INC     HL            ; データポインタを次へ
+          INC     HL            ; さらに次へ（Z座標の参照準備）
+          ADD     A,(HL)        ; X座標にZ座標の影響を加算（パースの予備計算）
+          RL      C             ; 桁上がりをCに保管（精度の保持）
+          ADD     A,(HL)        ; さらにZの影響を加算（倍率の調整）
+          JR      NC,$+3        ; 桁上がりがなければ次のINC Cをスキップ
+          INC     C             ; 桁上がりがあれば上位バイトCを増やす
+          RR      C             ; CとAをセットで右回転（÷2）
+          RRA                   ; Aを右回転（÷2：ビットを右へ流す）
+          RR      C             ; 再度Cを回転
+          RRA                   ; Aを回転（精度を落とさず分子を1/4に調整）
+          RR      C             ; 
+          LD      B,A           ; 調整が終わった「分子（X成分）」をBに格納
+          PUSH    DE            ; 2D座標保存先アドレス(DE)を一時退避
+          LD      D,0           ; 除算の準備：DEレジスタの上位Dを0に
+          LD      A,(HL)        ; 奥行き「Z座標」をAに読み込む
+          ADD     A,64          ; カメラからの基本距離（オフセット）を足す
+          RL      D             ; 桁上がりをDに反映（16ビットの除数を作成）
+          LD      E,A           ; 距離の合計をEにセット（DE = Z + 64）
+          CALL    WARIZU        ; 【割り算実行】 A = B(X成分) / DE(Z距離)
+          POP     DE            ; 保存先アドレス(DE)を復帰
+          LD      (DE),A        ; 算出した2Dの「x座標」をメモリに書き込む
+          DEC     HL            ; ポインタを戻してY座標の計算準備
+          INC     DE            ; 2D座標保存先を次のバイト（y用）に進める
+          ; --- ここからY座標の投影計算（Xと同様の工程） ---
+          LD      A,(HL)        ; 3Dデータの「Y座標」を読み込む
+          LD      C,0           ; Cをリセット
+          INC     HL            ; Z座標を指すように調整
+          ADD     A,(HL)        ; Y座標にZの影響を加算
+          RL      C             ; 
+          ADD     A,(HL)        ; 
+          JR      NC,$+3        ; 
+          INC     C             ; 
+          RR      C             ; 
+          RRA                   ; 
+          RR      C             ; 
+          RRA                   ; 分子（Y成分）のビットシフト調整
+          RR      C             ; 
+          LD      B,A           ; 調整後の値をBにセット
+          PUSH    DE            ; 保存先アドレスを退避
+          LD      D,0           ; 
+          LD      A,(HL)        ; Z座標を読み込む
+          ADD     A,64          ; Zにカメラオフセット64を足す
+          RL      D             ; 
+          LD      E,A           ; 
+          CALL    WARIZU        ; 【割り算実行】 A = B(Y成分) / DE(Z距離)
+          POP     DE            ; アドレス復帰
+          LD      (DE),A        ; 算出した2Dの「y座標」をメモリに書き込む
+          RET                   ; 頂点1つ分の投影完了！
           ;
-WARIZU:   PUSH    HL
-          LD      H,0
-          LD      L,B
-          LD      B,8
-WALOOP:   RL      C
-          RL      L
-          RL      H
-          OR      A
-          SBC     HL,DE
-          JR      NC,$+4
-          ADD     HL,DE
-          SCF
-          CCF
-          RLA
-          DJNZ    WALOOP
-          POP     HL
-          RET
+WARIZU:   PUSH    HL            ; HLレジスタを保護
+          LD      H,0           ; Hを0にする
+          LD      L,B           ; Lに分子をセット（HL = 被除数）
+          LD      B,8           ; 8ビット分繰り返すカウンタをセット
+WALOOP:   RL      C             ; キャリーをCに拾う（拡張用）
+          RL      L             ; HLを左に1ビットシフト（2倍にする）
+          RL      H             ; 
+          OR      A             ; キャリーフラグをクリア
+          SBC     HL,DE         ; 被除数(HL)から除数(DE)を引いてみる
+          JR      NC,$+4        ; 結果が正（引けた）なら次へジャンプ
+          ADD     HL,DE         ; 結果が負（引けなかった）なら元の値に戻す
+          SCF                   ; キャリーフラグを1にする（引けなかった印）
+          CCF                   ; それを反転させて0にする
+          RLA                   ; 商のビット（0か1）をAレジスタに流し込む
+          DJNZ    WALOOP        ; 8回繰り返すまでループ
+          POP     HL            ; HLを元に戻す
+          RET                   ; 割り算終了（Aに商が入っている）
 ;
 ; LINE ROUTINE
 ;
-LINE:     PUSH    AF
-          PUSH    BC
-          PUSH    DE
-          PUSH    HL
-          LD      BC,(RDVDP)
-          INC     B
-          INC     C
-          LD      L,C
-          LD      C,B
-          LD      DE,028FH
-          DI
-          OUT     (C),D
-          OUT     (C),E
-          LD      DE,2491H
-          OUT     (C),D
-          OUT     (C),E
-          LD      H,C
-          LD      C,L
-WAITLI:   IN      A,(C)
-          AND     1
-          JR      NZ,WAITLI
-          LD      C,H
-          OUT     (C),A
-          LD      A,8FH
-          OUT     (C),A
-          INC     C
-          INC     C
+; 線描画ルーチン
+;
+LINE:     PUSH    AF            ; レジスタ退避：A（計算用）を保存
+          PUSH    BC            ; レジスタ退避：BC（VDPポート・フラグ用）を保存
+          PUSH    DE            ; レジスタ退避：DE（レジスタ指定用）を保存
+          PUSH    HL            ; レジスタ退避：HL（座標データ用）を保存
+          LD      BC,(RDVDP)    ; VDPのベースポート番号を取得
+          INC     B             ; ポートを +1（通常は#99：コントロールポート）
+          INC     C             ; ポートをさらに +1（通常は#9A：パレット/レジスタ間接）
+          LD      L,C           ; 間接ポート番号をLに保管
+          LD      C,B           ; コントロールポート（#99）をCにセット
+          LD      DE,028FH      ; 「ステータスレジスタ#2」を読み取るための設定値
+          DI                    ; 割り込み禁止（VDPとの通信中に邪魔が入らないように）
+          OUT     (C),D         ; VDPレジスタ #15 を指定
+          OUT     (C),E         ; 「ステータスレジスタ#2」の読み取りを開始
+          LD      DE,2491H      ; 「レジスタ#17」に「コマンドレジスタ#36」を指定する設定値
+          OUT     (C),D         ; VDPレジスタ #17 を指定
+          OUT     (C),E         ; 「レジスタ#36」からの連続書き込み準備完了
+          LD      H,C           ; コントロールポート（#99）をHに一時退避
+          LD      C,L           ; データポート（#98/読み取り用）をCにセット
+WAITLI:   IN      A,(C)         ; VDPのステータスを読み出す
+          AND     1             ; CEビット（描画中フラグ）だけを抽出
+          JR      NZ,WAITLI     ; VDPが前の仕事で忙しければ待つ
+          LD      C,H           ; ポートをコントロール（#99）に戻す
+          OUT     (C),A         ; VDPレジスタを一旦リセット（Aは0）
+          LD      A,8FH         ; ステータス読み取り先を元に戻す命令
+          OUT     (C),A         ; レジスタ #15 の設定を解除
+          INC     C             ; ポートをコマンドレジスタ間接（#9B）に進める
+          INC     C             ; ※ここはハードウェアの仕様に合わせたポート調整
           ;
-          LD      HL,(LIDAT)
-          LD      DE,(LIDAT+2)
-          XOR     A
-          OUT     (C),H
-          OUT     (C),A
-          OUT     (C),L
-          LD      A,(VIJUAL)
-          XOR     1
-          OUT     (C),A
-          LD      B,0
-          LD      A,D
-          SUB     H
-          JR      NC,LINE1
-          NEG
-          SET     2,B
-LINE1:    LD      D,A
-          LD      A,E
-          SUB     L
-          JR      NC,LINE2
-          NEG
-          SET     3,B
-LINE2:    LD      E,A
-          CP      D
-          JR      C,LINE3
-          SET     0,B
-          LD      A,D
-          LD      D,E
-          LD      E,A
-LINE3:    XOR     A
-          OUT     (C),D
-          OUT     (C),A
-          OUT     (C),E
-          OUT     (C),A
-          LD      DE,(LIDAT+4)
-          OUT     (C),E
-          OUT     (C),B
-          LD      A,D
-          OR      01110000B
-          OUT     (C),A
-          EI
-          POP     HL
-          POP     DE
-          POP     BC
-          POP     AF
-          RET
+          LD      HL,(LIDAT)    ; 始点座標 (X, Y) を読み込む
+          LD      DE,(LIDAT+2)  ; 終点座標 (X', Y') を読み込む
+          XOR     A             ; Aを0にする
+          OUT     (C),H         ; R#32：始点X（下位）を書き込み
+          OUT     (C),A         ; R#33：始点X（上位）は0固定
+          OUT     (C),L         ; R#34：始点Y（下位）を書き込み
+          LD      A,(VIJUAL)    ; 現在表示中のページを取得
+          XOR     1             ; ページを反転（0ページ表示なら1ページに描画）
+          OUT     (C),A         ; R#35：始点Y（上位/ページ指定）を書き込み
+          LD      B,0           ; 方向フラグ（ARGレジスタ用）を初期化
+          LD      A,D           ; 終点XをAに
+          SUB     H             ; 終点X - 始点X (DX)
+          JR      NC,LINE1      ; 結果が正なら右方向なのでジャンプ
+          NEG                   ; 負なら反転して正の数（距離）にする
+          SET     2,B           ; ARGのDIXビットを立てる（「左方向」へ描画）
+LINE1:    LD      D,A           ; 確定したDX（Xの距離）をDに保存
+          LD      A,E           ; 終点YをAに
+          SUB     L             ; 終点Y - 始点Y (DY)
+          JR      NC,LINE2      ; 結果が正なら下方向なのでジャンプ
+          NEG                   ; 負なら反転して正の数（距離）にする
+          SET     3,B           ; ARGのDIYビットを立てる（「上方向」へ描画）
+LINE2:    LD      E,A           ; 確定したDY（Yの距離）をEに保存
+          CP      D             ; DX と DY の長さを比較
+          JR      C,LINE3       ; DXの方が長ければそのままジャンプ
+          SET     0,B           ; DYの方が長ければARGのMAJビットを立てる
+          LD      A,D           ; 長い方（DY）をDXレジスタに入れるためにスワップ開始
+          LD      D,E           ; E (DY) を D (DX) に
+          LD      E,A           ; A (旧DX) を E (DY) に
+LINE3:    XOR     A             ; Aを0にする
+          OUT     (C),D         ; R#36：長い方の距離 (DX) 下位を書き込み
+          OUT     (C),A         ; R#37：DX上位 (0)
+          OUT     (C),E         ; R#38：短い方の距離 (DY) 下位を書き込み
+          OUT     (C),A         ; R#39：DY上位 (0)
+          LD      DE,(LIDAT+4)  ; 色データ (Color) を読み込む
+          OUT     (C),E         ; R#44：色コードを書き込み
+          OUT     (C),B         ; R#45：ARG（計算した方向と軸フラグ）を書き込み
+          LD      A,D           ; 指定された論理演算（IMPなど）をAに
+          OR      01110000B     ; LINEコマンドコード（7）を合体
+          OUT     (C),A         ; R#46：コマンド実行！ 描画がスタートする
+          EI                    ; 割り込みを許可に戻す
+          POP     HL            ; レジスタ復帰
+          POP     DE            ;
+          POP     BC            ;
+          POP     AF            ;
+          RET                   ; メインルーチンへ戻る
           ;
 LIDAT:    DEFB    0,0  ;X ,Y
           DEFB    0,0  ;X',Y'
@@ -666,108 +696,116 @@ LIDAT:    DEFB    0,0  ;X ,Y
 ;
 ; CLS ROUTINE
 ;
-CLS:      PUSH    AF
-          PUSH    BC
-          PUSH    DE
-          PUSH    HL
-          LD      A,(VIJUAL)
-          XOR     1
-          LD      (CMDDAT+3),A
-          LD      BC,(RDVDP)
-          LD      DE,028FH
-          INC     B
-          INC     C
-          LD      L,C
-          LD      C,B
-          DI
-          OUT     (C),D
-          OUT     (C),E
-          LD      DE,2491H
-          OUT     (C),D
-          OUT     (C),E
-          INC     C
-          INC     C
-          LD      H,C
-          LD      C,L
-WAITCL:   IN      A,(C)
-          AND     1
-          JR      NZ,WAITCL
-          LD      C,H
-          LD      HL,CMDDAT
-          OUTI
-          OUTI
-          OUTI
-          OUTI
-          OUTI
-          OUTI
-          OUTI
-          OUTI
-          OUTI
-          OUTI
-          OUTI
-          DEC     C
-          DEC     C
-          OUT     (C),A
-          LD      A,8FH
-          OUT     (C),A
-          EI
-          POP     HL
-          POP     DE
-          POP     BC
-          POP     AF
-          RET
+; 画面消去
+;
+CLS:      PUSH    AF            ; レジスタ退避：メイン処理に影響を与えないよう保存
+          PUSH    BC            ; 
+          PUSH    DE            ; 
+          PUSH    HL            ; 
+          LD      A,(VIJUAL)    ; 現在「表示中」のページ番号を取得
+          XOR     1             ; 0と1を反転させ「裏ページ」の番号を作る
+          LD      (CMDDAT+3),A  ; 描画先Y座標のハイバイト（ページ指定）として書き込み
+          LD      BC,(RDVDP)    ; 事前に調べておいたVDPポート番号を取得
+          LD      DE,028FH      ; R#15にステータスレジスタ#2を指定するための値
+          INC     B             ; ポートを #99（コントロール）に調整
+          INC     C             ; ポートを #9A（間接/レジスタ）に調整
+          LD      L,C           ; 間接アクセス用ポート番号をLに保存
+          LD      C,B           ; Cをコントロールポート（#99）にセット
+          DI                    ; 割り込み禁止（VDP通信の整合性を守る）
+          OUT     (C),D         ; VDPレジスタ #15 を選択
+          OUT     (C),E         ; 「ステータスレジスタ#2」を読み取れる状態にする
+          LD      DE,2491H      ; R#17に「コマンドレジスタの先頭(#32)」を指定する値
+          OUT     (C),D         ; VDPレジスタ #17 を選択
+          OUT     (C),E         ; パラメータの連続転送準備（オートインクリメント）
+          INC     C             ; ポートを #9B（コマンド転送専用ポート）に進める
+          INC     C             ; ※機種依存を避けるための丁寧な調整
+          LD      H,C           ; コマンドポート（#9B）をHに保存
+          LD      C,L           ; データポート（#98）を読み取り用にセット
+WAITCL:   IN      A,(C)         ; VDPの状態を読み込む
+          AND     1             ; CEビット（コマンド実行中か）をチェック
+          JR      NZ,WAITCL     ; 前の描画が終わっていなければループして待つ
+          LD      C,H           ; ポートをコマンド転送用の #9B に戻す
+          LD      HL,CMDDAT     ; 転送するデータ（11バイト）のアドレス
+          OUTI                  ; 1バイト目：X開始位置(L)
+          OUTI                  ; 2バイト目：X開始位置(H)
+          OUTI                  ; 3バイト目：Y開始位置(L)
+          OUTI                  ; 4バイト目：Y開始位置(H / ページ番号)
+          OUTI                  ; 5バイト目：幅X(L)
+          OUTI                  ; 6バイト目：幅X(H)
+          OUTI                  ; 7バイト目：高さY(L)
+          OUTI                  ; 8バイト目：高さY(H)
+          OUTI                  ; 9バイト目：色データ（0=黒）
+          OUTI                  ; 10バイト目：未使用/方向
+          OUTI                  ; 11バイト目：コマンド実行（HMMV）
+          DEC     C             ; ポートをコントロール（#99）側へ戻す
+          DEC     C             ; 
+          OUT     (C),A         ; A（0）を書き込んでレジスタ選択をリセット
+          LD      A,8FH         ; ステータスレジスタの読み取り先を#0に戻す
+          OUT     (C),A         ; レジスタ #15 を解除
+          EI                    ; 割り込み許可
+          POP     HL            ; レジスタ復帰
+          POP     DE            ; 
+          POP     BC            ; 
+          POP     AF            ; 
+          RET                   ; 呼び出し元へ戻る
           ;
-CMDDAT:   DEFW    0,22
-          DEFW    256,212
-          DEFB    0
-          DEFB    00000000B
-          DEFB    11000000B
+CMDDAT:   DEFW    0,22          ; 転送先X=0, Y=22
+          DEFW    256,212       ; 消去サイズ 横256, 縦212ドット
+          DEFB    0             ; 塗りつぶす色（0番＝通常は黒）
+          DEFB    00000000B     ; 転送方向（通常設定）
+          DEFB    11000000B     ; コマンドコード「HMMV」（VRAM高速埋め尽くし）
 ;
 ; SCALE SUB
 ;
-SCALE:    PUSH    AF
-          PUSH    BC
-          PUSH    DE
-          PUSH    HL
-          LD      A,(SCOLOR)
-          LD      L,A
-          LD      H,0
-          LD      (LIDAT+4),HL
-          LD      L,154
-          LD      (LIDAT),HL
-          LD      H,255
-          LD      (LIDAT+2),HL
-          CALL    LINE
-          LD      A,(SCOLOR+1)
-          AND     3
-          LD      H,A
-          LD      A,(POINTA)
-          ADD     A,H
-          AND     7
-          LD      (POINTA),A
-          LD      HL,POINTA+1
-          ADD     A,L
-          JR      NC,$+3
-          INC     H
-          LD      L,A
-          LD      B,4
-SCLOOP:   LD      A,(HL)
-          LD      E,A
-          LD      D,0
-          LD      (LIDAT),DE
-          LD      D,255
-          LD      (LIDAT+2),DE
-          CALL    LINE
-          LD      DE,8
-          ADD     HL,DE
-          DJNZ    SCLOOP
-          POP     HL
-          POP     DE
-          POP     BC
-          POP     AF
-          RET
+; 地平線表示ルーチン
+;
+SCALE:    PUSH    AF            ; レジスタ退避：メインの計算に影響しないように保存
+          PUSH    BC            ; 
+          PUSH    DE            ; 
+          PUSH    HL            ; 
+          LD      A,(SCOLOR)    ; 地面の描画色を取得
+          LD      L,A           ; Lレジスタに色をセット
+          LD      H,0           ; Hを0に（HLで色の設定を作る）
+          LD      (LIDAT+4),HL  ; LINEコマンド用の色データ領域(LIDAT+4)へ保存
+          LD      L,154         ; Y座標の基準値 154 をセット
+          LD      (LIDAT),HL    ; LINE始点のY座標として保存（Xは0）
+          LD      H,255         ; X終点を 255（画面右端）にセット
+          LD      (LIDAT+2),HL  ; LINE終点の座標として保存（Yは始点と同じ154）
+          CALL    LINE          ; 地平線の基準となる1本目を描画
+          ; --- スクロールのインデックス計算 ---
+          LD      A,(SCOLOR+1)  ; スクロールの速度成分を取得
+          AND     3             ; 0?3の範囲に限定（マスク処理）
+          LD      H,A           ; 増分をHにセット
+          LD      A,(POINTA)    ; 現在のスクロール位置（0?7）を取得
+          ADD     A,H           ; 位置を更新（速度分だけ進める）
+          AND     7             ; 0?7の範囲でループさせる（8段階アニメーション）
+          LD      (POINTA),A    ; 更新した位置を保存
+          ; --- テーブルの参照アドレス計算 ---
+          LD      HL,POINTA+1   ; パーステーブルの先頭アドレスをHLに
+          ADD     A,L           ; 現在のスクロール位置(0-7)を足して参照開始点を決める
+          JR      NC,$+3        ; 桁上がり（キャリー）がなければ次へ
+          INC     H             ; 桁上がりがあればアドレスのハイバイトを調整
+          LD      L,A           ; テーブル内の読み出し開始位置が確定
+          LD      B,4           ; ループ回数：パース線を4本引く
+SCLOOP:   LD      A,(HL)        ; テーブルからY座標を読み出す
+          LD      E,A           ; EにY座標をセット
+          LD      D,0           ; D=0 (X始点=0)
+          LD      (LIDAT),DE    ; LINEコマンドの始点座標へ
+          LD      D,255         ; D=255 (X終点=255)
+          LD      (LIDAT+2),DE  ; LINEコマンドの終点座標へ（水平線）
+          CALL    LINE          ; パースのついた水平線を描画
+          LD      DE,8          ; 次のパース線までのオフセット（8段階分飛ばす）
+          ADD     HL,DE         ; HLを次の線のデータ位置へ進める
+          DJNZ    SCLOOP        ; Bレジスタを減らして、4本引くまでループ
+          POP     HL            ; レジスタ復帰
+          POP     DE            ; 
+          POP     BC            ; 
+          POP     AF            ; 
+          RET                   ; 呼び出し元へ戻る
+          ;
 POINTA:
-DEFB      0
+DEFB      0						; 現在のスクロール状態（0?7）
+; 以下、奥から手前へ広がるY座標のリスト（8段階のアニメーションを内包）
 DEFB      154,154,155,156
 DEFB      157,157,158,159
 DEFB      160,161,162,163
@@ -778,309 +816,345 @@ DEFB      193,197,202,208
 DEFB      214,222,232,243
 ;
 ; KEY ROUTINE
+; 
+; キー入力ルーチン
 ;
-KEY:      PUSH    IX
-          XOR     A
-          LD      IX,GTSTCK
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          OR      A
-          JR      NZ,M1JRKE
-          INC     A
-          LD      IX,GTSTCK
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-M1JRKE:   POP     IX
+KEY:      PUSH    IX            ; IXレジスタ（ワークエリア用）を保存
+          XOR     A             ; A=0 (ジョイスティック0番＝カーソルキー指定)
+          LD      IX,GTSTCK     ; BIOSのGTSTCK関数のアドレス(#00D5)をセット
+          LD      IY,(EXPTBL-1) ; BIOSスロット情報を取得
+          CALL    CALSLT        ; キー入力を読み出す
+          OR      A             ; 入力があったかチェック
+          JR      NZ,M1JRKE     ; 入力があれば次へ
+          INC     A             ; A=1 (ジョイスティック1番)に切り替え
+          LD      IX,GTSTCK     ; 
+          LD      IY,(EXPTBL-1) ; 
+          CALL    CALSLT        ; ジョイスティック1番も読みに行く
+M1JRKE:   POP     IX            ; IXを復帰（ここからIX+nでオブジェクトのワークを操作）
+          OR      A             ; 入力（方向）を確認（0=入力なし, 1=上, 3=右, 5=下, 7=左）
+          JR      Z,M1TRIG      ; 入力がなければボタンチェックへ
+          DEC     A             ; 0?7の範囲に調整
+          LD      B,A           ; Bに入力方向を保存
+          LD      D,(IX+7)      ; 現在のX座標をDにロード
+          LD      E,(IX+8)      ; 現在のY座標をEにロード
+          AND     3             ; 上下の動きを除去して左右成分を抽出
+          JR      Z,M1DOWN      ; 左右の入力がなければ次へ
+          BIT     2,B           ; 左方向（方向5,6,7あたり）かどうか判定
+          LD      A,D           ; X座標をAへ
+          JR      NZ,M1LEFT     ; 左ならM1LEFTへジャンプ
+          ADD     A,16          ; 【右移動】16ドット右へ
+          CP      225           ; 画面端（225）を超えないかチェック
+          JR      NC,M1DOWN     ; 超えるなら移動キャンセル
+          LD      D,A           ; X座標を更新
+          DEC     (IX+10)       ; ワークエリアのパラメータ（回転角など？）を減らす
+          JR      M1DOWN        ; Y軸計算へ
+M1LEFT:   SUB     16            ; 【左移動】16ドット左へ
+          CP      32            ; 左端（32）より小さくならないかチェック
+          JR      C,M1DOWN      ; 
+          LD      D,A           ; X座標を更新
+          INC     (IX+10)       ; パラメータを増やす          
+M1DOWN:   LD      A,B           ; 保存していた方向を戻す
+          ADD     A,2           ; 方向を90度ずらして上下判定をしやすくする
+          AND     7             ; 
+          LD      B,A           ; 
+          AND     3             ; 
+          JR      Z,M1SET       ; 上下の入力がなければ保存へ
+          BIT     2,B           ; 上下どっちか判定
+          LD      A,E           ; Y座標をAへ
+          JR      NZ,M1DW       ; 上ならM1DWへジャンプ
+          ADD     A,16          ; 【下移動】16ドット下へ
+          CP      225           ; 画面下端チェック
+          JR      NC,M1SET      ; 
+          LD      E,A           ; Y座標を更新
+          JR      M1SET         ; 
+M1DW:     SUB     16            ; 【上移動】16ドット上へ
+          CP      32            ; 上端チェック
+          JR      C,M1SET       ; 
+          LD      E,A           ; Y座標を更新
+M1SET:    LD      (IX+7),D      ; 確定したX座標を保存
+          LD      (IX+8),E      ; 確定したY座標を保存
           ;
-          OR      A
-          JR      Z,M1TRIG
-          DEC     A
-          LD      B,A
-          LD      D,(IX+7)
-          LD      E,(IX+8)
-          AND     3
-          JR      Z,M1DOWN
-          BIT     2,B
-          LD      A,D
-          JR      NZ,M1LEFT
-          ADD     A,16
-          CP      225
-          JR      NC,M1DOWN
-          LD      D,A
-          DEC     (IX+10)
-          JR      M1DOWN
-M1LEFT:   SUB     16
-          CP      32
-          JR      C,M1DOWN
-          LD      D,A
-          INC     (IX+10)
-M1DOWN:   LD      A,B
-          ADD     A,2
-          AND     7
-          LD      B,A
-          AND     3
-          JR      Z,M1SET
-          BIT     2,B
-          LD      A,E
-          JR      NZ,M1DW
-          ADD     A,16
-          CP      225
-          JR      NC,M1SET
-          LD      E,A
-          JR      M1SET
-M1DW:     SUB     16
-          CP      32
-          JR      C,M1SET
-          LD      E,A
+M1TRIG:   PUSH    IX            ; 再びIX退避
+          XOR     A             ; A=0 (スペースキー/ボタン1)
+          LD      IX,GTTRIG     ; BIOSのGTTRIG関数のアドレス(#00D8)
+          LD      IY,(EXPTBL-1) ; 
+          CALL    CALSLT        ; ボタン状態を取得
+          INC     A             ; ボタンが押されているか判定
+          JR      Z,M1JRTR      ; 
+          LD      IX,GTTRIG     ; Aボタン(1)を読みに行く
+          LD      IY,(EXPTBL-1) ; 
+          CALL    CALSLT        ; 
+          INC     A             ; 
+M1JRTR:   POP     IX            ; 
           ;
-M1SET:    LD      (IX+7),D
-          LD      (IX+8),E
+          JR      Z,M1GO        ; ボタンが押されていればM1GOへ
+          LD      A,-8          ; 【ボタンなし時】値を-8（戻るような動き）
+          ADD     A,(IX+9)      ; 
+          CP      16            ; 
+          JR      C,M1SET2+3    ; 
+          JR      M1SET2        ; 
+M1GO:     LD      A,16          ; 【ボタンあり時】値を+16（進むような動き）
+          ADD     A,(IX+9)      ; 
+          CP      129           ; 最大値129でリミッター
+          JR      NC,M1SET2+3   ; 
+M1SET2:   LD      (IX+9),A      ; 更新した値を保存
           ;
-M1TRIG:   PUSH    IX
-          XOR     A
-          LD      IX,GTTRIG
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          INC     A
-          JR      Z,M1JRTR
-          LD      IX,GTTRIG
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          INC     A
-M1JRTR:   POP     IX
-          ;
-          JR      Z,M1GO
-          LD      A,-8
-          ADD     A,(IX+9)
-          CP      16
-          JR      C,M1SET2+3
-          JR      M1SET2
-M1GO:     LD      A,16
-          ADD     A,(IX+9)
-          CP      129
-          JR      NC,M1SET2+3
-M1SET2:   LD      (IX+9),A
-          ;
-          CALL    SETGAG
-          RET
+          CALL    SETGAG        ; ゲージ表示か何かのサブルーチンを呼ぶ
+          RET                   ; 終了！
 ;
 ; SET GAGE
 ;
-SETGAG:   LD      IY,GAGE
-          LD      A,(IX+7)
-          ADD     A,24
-          LD      (IY+1),A
-          SUB     48
-          LD      (IY+0),A
-          LD      A,(IX+8)
-          ADD     A,20
-          LD      (IY+3),A
-          SUB     38
-          LD      (IY+2),A
-          LD      A,(IX+9)
-          ADD     A,16
-          LD      (IY+5),A
-          SUB     32
-          LD      (IY+4),A
-          RET
+; 当たり判定ボックス生成ルーチン
+;
+SETGAG:   LD      IY,GAGE       ; 計算結果を格納するワークエリア「GAGE」のアドレスをIYにセット
+          ; --- X軸の範囲計算 ---
+          LD      A,(IX+7)      ; KEYルーチンで更新された「現在のX座標」をロード
+          ADD     A,24          ; X座標に +24 する（右側の限界値を計算）
+          LD      (IY+1),A      ; GAGEの2番目のバイト（X最大値）に保存
+          SUB     48            ; 現在のA(X+24)から 48 引く（つまり X-24：左側の限界値）
+          LD      (IY+0),A      ; GAGEの1番目のバイト（X最小値）に保存
+          ; --- Y軸の範囲計算 ---
+          LD      A,(IX+8)      ; 「現在のY座標」をロード
+          ADD     A,20          ; Y座標に +20 する（下側の限界値を計算）
+          LD      (IY+3),A      ; GAGEの4番目のバイト（Y最大値）に保存
+          SUB     38            ; 現在のA(Y+20)から 38 引く（つまり Y-18：上側の限界値）
+          LD      (IY+2),A      ; GAGEの3番目のバイト（Y最小値）に保存
+          ; --- 特殊パラメータ（Z軸やパワーなど）の範囲計算 ---
+          LD      A,(IX+9)      ; ボタン入力等で変化する「第3のパラメータ」をロード
+          ADD     A,16          ; +16 する（最大幅）
+          LD      (IY+5),A      ; GAGEの6番目のバイトに保存
+          SUB     32            ; 現在のAから 32 引く（つまり元の値から -16：最小幅）
+          LD      (IY+4),A      ; GAGEの5番目のバイトに保存
+          RET                   ; 計算完了、戻る
 ;
 ; MOVE SUB
 ;
-MOVE:     PUSH    IX
-          POP     HL
-          LD      DE,7
-          ADD     HL,DE
-          POP     DE
-          LD      A,(DE)
-          ADD     A,(HL)
-          LD      (HL),A
-          INC     DE
-          INC     HL
-          LD      A,(DE)
-          ADD     A,(HL)
-          LD      (HL),A
-          INC     DE
-          INC     HL
-          LD      A,(DE)
-          ADD     A,(HL)
-          LD      (HL),A
-          INC     DE
-          INC     HL
-          LD      A,(DE)
-          ADD     A,(HL)
-          LD      (HL),A
-          INC     DE
-          INC     HL
-          LD      A,(DE)
-          ADD     A,(HL)
-          LD      (HL),A
-          INC     DE
-          INC     HL
-          LD      A,(DE)
-          ADD     A,(HL)
-          LD      (HL),A
-          RET
-          ;
-RTURN:    EX      (SP),HL
-          PUSH    DE
-          PUSH    BC
-          PUSH    AF
-          PUSH    HL
-          LD      A,(IX+7)
-          SUB     (HL)
-          LD      B,A
-          INC     HL
-          LD      A,(IX+8)
-          SUB     (HL)
-          LD      C,A
-          INC     HL
-          LD      A,(IX+9)
-          SUB     (HL)
-          LD      D,A
-          INC     HL
-          LD      A,(HL)
-          OR      A
-          CALL    NZ,KAITEN
-          LD      E,B
-          LD      B,D
-          INC     HL
-          LD      A,(HL)
-          OR      A
-          CALL    NZ,KAITEN
-          LD      D,C
-          LD      C,B
-          LD      B,E
-          INC     HL
-          LD      A,(HL)
-          OR      A
-          CALL    NZ,KAITEN
-          POP     HL
-          LD      A,B
-          ADD     A,(HL)
-          LD      (IX+7),A
-          INC     HL
-          LD      A,D
-          ADD     A,(HL)
-          LD      (IX+8),A
-          INC     HL
-          LD      A,C
-          ADD     A,(HL)
-          LD      (IX+9),A
-          INC     HL
-          INC     HL
-          INC     HL
-          INC     HL
-          POP     AF
-          POP     BC
-          POP     DE
-          EX      (SP),HL
-          RET
+MOVE:     PUSH    IX            ; 現在のオブジェクトのワークエリア先頭(IX)を保存
+          POP     HL            ; 保存したアドレスをHLレジスタにコピー
+          LD      DE,7           ; オフセット値「7」をセット
+          ADD     HL,DE         ; HL = IX + 7（座標データが始まる位置までポインタを移動）
+          POP     DE            ; ★重要：呼び出し元がスタックに積んだ「移動量データのアドレス」を取得
+          ; --- 1項目目（X座標など）の更新 ---
+          LD      A,(DE)        ; 移動量データの1バイト目を読み込む
+          ADD     A,(HL)        ; 現在の値（IX+7）に加算する
+          LD      (HL),A        ; 加算後の値を書き戻す
+          INC     DE            ; 移動量データのポインタを次へ
+          INC     HL            ; オブジェクト側のポインタを次へ（IX+8へ）
+          ; --- 2項目目（Y座標など）の更新 ---
+          LD      A,(DE)        ; 移動量データの2バイト目を読み込む
+          ADD     A,(HL)        ; 現在の値（IX+8）に加算
+          LD      (HL),A        ; 書き戻し
+          INC     DE            ; 
+          INC     HL            ; 次へ（IX+9へ）
+          ; --- 3項目目（Z座標など）の更新 ---
+          LD      A,(DE)        ; 
+          ADD     A,(HL)        ; 
+          LD      (HL),A        ; (IX+9)を更新
+          INC     DE            ; 
+          INC     HL            ; 次へ（IX+10へ）
+          ; --- 4項目目（回転角など）の更新 ---
+          LD      A,(DE)        ; 
+          ADD     A,(HL)        ; 
+          LD      (HL),A        ; (IX+10)を更新
+          INC     DE            ; 
+          INC     HL            ; 次へ（IX+11へ）
+          ; --- 5項目目（予備パラメータ1）の更新 ---
+          LD      A,(DE)        ; 
+          ADD     A,(HL)        ; 
+          LD      (HL),A        ; (IX+11)を更新
+          INC     DE            ; 
+          INC     HL            ; 次へ（IX+12へ）
+          ; --- 6項目目（予備パラメータ2）の更新 ---
+          LD      A,(DE)        ; 
+          ADD     A,(HL)        ; 
+          LD      (HL),A        ; (IX+12)を更新
+          RET                   ; 更新完了、戻る
+;
+; TURN SUB 
+;
+; ３軸回転サブルーチン
+;
+RTURN:    EX      (SP),HL       ; スタックトップ（戻り先＝データポインタ）とHLを入れ替え
+          PUSH    DE            ; レジスタ退避
+          PUSH    BC            ; 
+          PUSH    AF            ; 
+          PUSH    HL            ; データの開始アドレスを一時保存
+          ; --- 回転の中心点からの相対座標を算出 ---
+          LD      A,(IX+7)      ; 現在の絶対X座標をロード
+          SUB     (HL)          ; データの中心点Xを引く（相対Xを算出）
+          LD      B,A           ; B = 相対X
+          INC     HL            ; 次のデータ（中心点Y）へ
+          LD      A,(IX+8)      ; 現在の絶対Y座標をロード
+          SUB     (HL)          ; データの中心点Yを引く（相対Yを算出）
+          LD      C,A           ; C = 相対Y
+          INC     HL            ; 次のデータ（中心点Z）へ
+          LD      A,(IX+9)      ; 現在の絶対Z座標をロード
+          SUB     (HL)          ; データの中心点Zを引く（相対Zを算出）
+          LD      D,A           ; D = 相対Z
+          ; --- 3軸回転処理の開始 ---
+          INC     HL            ; 次のデータ（X軸回転角）へ
+          LD      A,(HL)        ; 回転角をロード
+          OR      A             ; 角度が0かどうかチェック
+          CALL    NZ,KAITEN     ; 0でなければ回転サブルーチン実行！
+          ; 軸の入れ替え（レジスタの役割をスライドさせる）
+          LD      E,B           ; Bを退避
+          LD      B,D           ; 
+          INC     HL            ; 次のデータ（Y軸回転角）へ
+          LD      A,(HL)        ; 
+          OR      A             ; 
+          CALL    NZ,KAITEN     ; 2軸目の回転実行！
+          ; 再び軸の入れ替え
+          LD      D,C           ; 
+          LD      C,B           ; 
+          LD      B,E           ; 
+          INC     HL            ; 次のデータ（Z軸回転角）へ
+          LD      A,(HL)        ; 
+          OR      A             ; 
+          CALL    NZ,KAITEN     ; 3軸目の回転実行！
+          ; --- 回転後の相対座標に中心点を足し戻す ---
+          POP     HL            ; データの開始アドレス（中心点）を復帰
+          LD      A,B           ; 回転後のX座標
+          ADD     A,(HL)        ; 中心点Xを足して絶対座標に戻す
+          LD      (IX+7),A      ; 更新されたX座標を保存
+          INC     HL            ; 
+          LD      A,D           ; 回転後のY座標
+          ADD     A,(HL)        ; 中心点Yを足す
+          LD      (IX+8),A      ; 更新されたY座標を保存
+          INC     HL            ; 
+          LD      A,C           ; 回転後のZ座標
+          ADD     A,(HL)        ; 中心点Zを足す
+          LD      (IX+9),A      ; 更新されたZ座標を保存
+          ; --- 後処理 ---
+          INC     HL            ; 
+          INC     HL            ; 使用したデータ分だけHLを進める
+          INC     HL            ; （このHLが呼び出し元への戻り先になる）
+          INC     HL            ; 
+          POP     AF            ; レジスタ復帰
+          POP     BC            ; 
+          POP     DE            ; 
+          EX      (SP),HL       ; 更新されたポインタをスタックに戻し、元のHLを復帰
+          RET                   ; 呼び出し元へ
 ;
 ; DATA SET
 ;
-DSET:     EX      (SP),HL
-          PUSH    DE
-          PUSH    BC
-          PUSH    AF
-          PUSH    HL
-          LD      HL,PORIDAT
-          LD      DE,16
-          LD      B,E
-DSLOOP:   LD      A,(HL)
-          OR      A
-          JR      Z,DSSET
-          ADD     HL,DE
-          DJNZ    DSLOOP
-          POP     HL
-          LD      DE,13
-          ADD     HL,DE
-          JR      DSRET
-          ;
-DSSET:    POP     DE
-          LD      (HL),1
-          INC     HL
-          LD      (HL),0
-          INC     HL
-          LD      (HL),0
-          INC     HL
-          EX      DE,HL
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-          LDI
-DSRET:    POP     AF
-          POP     BC
-          POP     DE
-          EX      (SP),HL
-          RET
-          ;
-CLSPRI:   XOR     A
-          LD      HL,PORIDAT
-          LD      DE,PORIDAT+1
-          LD      BC,255
-          LD      (HL),A
-          LDIR
-          RET
+; オブジェクトワークエリアセットルーチン
+;
+DSET:     EX      (SP),HL       ; スタックトップ（データのポインタ）とHLを入れ替え
+          PUSH    DE            ; レジスタ退避
+          PUSH    BC            ; 
+          PUSH    AF            ; 
+          PUSH    HL            ; データの開始アドレスを一時保存
+          LD      HL,PORIDAT    ; オブジェクトワークエリア(PORIDAT)の先頭をセット
+          LD      DE,16          ; 1つあたりのデータサイズ（16バイト）をセット
+          LD      B,E           ; 最大16個のスロットをチェックするループカウンタ
+DSLOOP:   LD      A,(HL)        ; ワークエリアの先頭バイト（使用フラグ）を読み込む
+          OR      A             ; フラグが0（空きスロット）かどうか確認
+          JR      Z,DSSET       ; 空いていれば、データ書き込み(DSSET)へジャンプ
+          ADD     HL,DE         ; 使用中なら、次のスロットへポインタを進める
+          DJNZ    DSLOOP        ; 空きが見つかるまでループ
+          ; --- 空きが見つからなかった場合 ---
+          POP     HL            ; 保存していたデータポインタを戻す
+          LD      DE,13          ; データのサイズ（13バイト分）だけ進める
+          ADD     HL,DE         ; 
+          JR      DSRET         ; 何もせず終了処理へ
+          ; --- データ書き込み処理 ---
+DSSET:    POP     DE            ; 保存していた「コピー元データ」のポインタをDEへ
+          LD      (HL),1        ; 使用フラグを「1（使用中）」にする
+          INC     HL            ; 
+          LD      (HL),0        ; 状態管理用？（例えば生存時間や初期状態）をリセット
+          INC     HL            ; 
+          LD      (HL),0        ; 
+          INC     HL            ; 
+          EX      DE,HL         ; LDIを使うためにDE(コピー先)とHL(コピー元)を調整
+          ; 怒涛のLDI（高速メモリ転送） 呼び出し側から13バイトをスロットへコピー
+          LDI                   ; 1バイト転送 (X座標?)
+          LDI                   ; 2バイト転送 (Y座標?)
+          LDI                   ; 3バイト転送 (Z座標?)
+          LDI                   ; 4バイト転送 (移動速度/角度?)
+          LDI                   ; 5バイト転送
+          LDI                   ; 6バイト転送
+          LDI                   ; 7バイト転送
+          LDI                   ; 8バイト転送
+          LDI                   ; 9バイト転送
+          LDI                   ; 10バイト転送
+          LDI                   ; 11バイト転送
+          LDI                   ; 12バイト転送
+          LDI                   ; 13バイト転送
+DSRET:    POP     AF            ; レジスタ復帰
+          POP     BC            ; 
+          POP     DE            ; 
+          EX      (SP),HL       ; 更新されたポインタをスタックに戻し、元のHLを復帰
+          RET                   ; 呼び出し元へ
+;
+; OBJ WORK CLEAR
+;
+; オブジェクトワークエリア全消去ルーチン
+;
+CLSPRI:   XOR     A             ; Aレジスタを0にする（消去用の値）
+          LD      HL,PORIDAT    ; 塗りつぶしの「起点」となるアドレスをセット
+          LD      DE,PORIDAT+1  ; 「書き込み先」を1バイトずらしてセット
+          LD      BC,255        ; 塗りつぶす範囲（バイト数）を指定
+          LD      (HL),A        ; 最初の1バイト（PORIDATの先頭）に0を書き込む
+          LDIR                  ; HLからDEへ転送を繰り返す（0が次々と隣へコピーされる）
+          RET                   ; 初期化完了、戻る
 ;
 ; PALETTE SET
 ;
-PALETE:   PUSH    AF
-          PUSH    BC
-          PUSH    DE
-          PUSH    HL
-          LD      BC,(RDVDP+1)
-          INC     C
-          DI
-          XOR     A
-          OUT     (C),A
-          LD      A,80H+16
-          OUT     (C),A
-          INC     C
-          LD      B,16
-          LD      HL,PLDAT
-          LD      E,(HL)
-PLLOOP:   INC     HL
-          LD      A,(HL)
-          SUB     E
-          JR      NC,$+3
-          XOR     A
-          RLCA
-          RLCA
-          RLCA
-          RLCA
-          LD      D,A
-          INC     HL
-          LD      A,(HL)
-          SUB     E
-          JR      NC,$+3
-          XOR     A
-          OR      D
-          OUT     (C),A
-          INC     HL
-          LD      A,(HL)
-          SUB     E
-          JR      NC,$+3
-          XOR     A
-          OUT     (C),A
-          DJNZ    PLLOOP
-          EI
-          POP     HL
-          POP     DE
-          POP     BC
-          POP     AF
-          RET
+; パレット処理
+;
+PALETE:   PUSH    AF            ; レジスタをすべて保護
+          PUSH    BC            ; 
+          PUSH    DE            ; 
+          PUSH    HL            ; 
+          LD      BC,(RDVDP+1)  ; BIOSワークエリアからVDPポートのアドレスを取得
+          INC     C             ; ポートをコントロール用(通常#99)に調整
+          DI                    ; 割り込み禁止（VDPレジスタ操作中の安全確保）
+          ; --- パレットレジスタのポインタを0番にセット ---
+          XOR     A             ; A = 0
+          OUT     (C),A         ; パレット番号0を指定
+          LD      A,80H+16      ; VDPレジスタ16番（パレットポインタ）を指定
+          OUT     (C),A         ; 
+          INC     C             ; ポートをデータ用(通常#9A)に調整
+          ; --- パレットデータの転送ループ ---
+          LD      B,16          ; 16色分繰り返す
+          LD      HL,PLDAT      ; パレットデータの先頭アドレス
+          LD      E,(HL)        ; ★データの最初の1バイト(7)を「減算値」として読み込む
+PLLOOP:   INC     HL            ; 次のデータ（赤・緑成分）へ
+          ; --- 緑(Green)成分の処理 ---
+          LD      A,(HL)        ; 緑の輝度をロード
+          SUB     E             ; 減算値を引く（暗くする）
+          JR      NC,$+3        ; 結果がマイナスにならなければOK
+          XOR     A             ; マイナスなら0でクランプ（真っ暗）
+          RLCA                  ; 緑は上位4ビットなので左へ4回シフト
+          RLCA                  ; 
+          RLCA                  ; 
+          RLCA                  ; 
+          LD      D,A           ; 緑成分をDに一時保存
+          ; --- 赤(Red)成分の処理 ---
+          INC     HL            ; 
+          LD      A,(HL)        ; 赤の輝度をロード
+          SUB     E             ; 減算値を引く
+          JR      NC,$+3        ; 
+          XOR     A             ; マイナスなら0
+          OR      D             ; 保存していた緑成分と合成
+          OUT     (C),A         ; VDPへ書き込み (1バイト目：RB)
+          ; --- 青(Blue)成分の処理 ---
+          INC     HL            ; 
+          LD      A,(HL)        ; 青の輝度をロード
+          SUB     E             ; 減算値を引く
+          JR      NC,$+3        ; 
+          XOR     A             ; マイナスなら0
+          OUT     (C),A         ; VDPへ書き込み (2バイト目：-B)
+          DJNZ    PLLOOP        ; 16色終わるまでループ
+          EI                    ; 割り込み許可
+          POP     HL            ; レジスタ復帰
+          POP     DE            ; 
+          POP     BC            ; 
+          POP     AF            ; 
+          RET                   ; 終了
           ;
-PLDAT:    DEFB    7
-          DEFB    0,0,0,0,0,0
+PLDAT:    DEFB    7             ; この値が全ての輝度から引かれる（今は7なので全部真っ暗になる！）
+          DEFB    0,0,0,0,0,0   ; 0?2色目のRGBデータ（以下同様）
           DEFB    1,1,6,3,3,7
           DEFB    1,7,1,2,7,3
           DEFB    5,1,1,2,7,6
@@ -1088,55 +1162,80 @@ PLDAT:    DEFB    7
           DEFB    6,1,6,6,3,6
           DEFB    1,1,4,6,5,2
           DEFB    5,5,5,7,7,7
+;  
+; FADE IN 
+; 
+; だんだん明るくする処理のオブジェクトを作成
+;
+UNFADE:   CALL    DSET          ; 空きスロットを探して新しいタスクを登録
+          DEFW    0,UNFAD       ; (IX+1)=0（初期状態）, 実行アドレス=UNFAD を設定
+          DEFW    0,0,0,0       ; 座標などのパラメータ（今回は未使用なので0）
+          DEFB    00000001B     ; オブジェクト属性（フラグ）を設定
+          RET                   ; 登録完了！あとはメインループが勝手にUNFADを呼ぶ
+          ;  
+          ; フェードインオブジェクトのコールバック処理
           ;
-UNFADE:   CALL    DSET
-          DEFW    0,UNFAD
-          DEFW    0,0,0,0
-          DEFB    00000001B
-          RET
-UNFAD:    LD      A,(IX+1)
-          INC     (IX+1)
-          CP      8
-          JP      Z,MALEND
-          XOR     7
-          LD      (PLDAT),A
-          CALL    PALETE
-          RET
+UNFAD:    LD      A,(IX+1)      ; ワークエリアから現在の経過フレーム（輝度段階）をロード
+          INC     (IX+1)        ; 次のフレームのためにカウントアップ
+          CP      8             ; 輝度が最大（8段階目）に達したかチェック
+          JP      Z,MALEND      ; 最大なら、このフェードインタスクを自身で消去して終了
+          ; --- パレットの減算値を計算 ---
+          XOR     7             ; 0→7, 1→6... という具合に「7からの逆順」に変換
+          LD      (PLDAT),A     ; 計算した値をPALETEルーチンが参照する減算用メモリに書き込む
+          CALL    PALETE        ; 実際にパレットを更新（画面が一段階明るくなる）
+          RET                   ; 今回の処理終了（また次のフレームで呼ばれる）
+;
+; FADE OUT
+;
+; 画面をだんだんと暗くする処理のオブジェクトを生成
+;
+FADE:     CALL    DSET          ; 空きスロットにフェードアウト・タスクを登録
+          DEFW    0,FAD         ; (IX+1)=0, 実行アドレス=FAD（フェードアウト本体）
+          DEFW    0,0,0,0       ; 座標等のパラメータ（未使用）
+          DEFB    00000001B     ; オブジェクト属性フラグ
+          RET                   ; メインループに処理を任せて戻る
           ;
-FADE:     CALL    DSET
-          DEFW    0,FAD
-          DEFW    0,0,0,0
-          DEFB    00000001B
-          RET
-FAD:      LD      A,(IX+1)
-          INC     (IX+1)
-          CP      8
-          JP      Z,MALEND
-          LD      (PLDAT),A
-          CALL    PALETE
-          RET
+          ; フェードアウトオブジェクトのコールバック処理
+          ;
+FAD:      LD      A,(IX+1)      ; 現在のフェード段階（0?7）をロード
+          INC     (IX+1)        ; 次のフレームのために段階を進める
+          CP      8             ; 8段階（完全に真っ暗）に達したかチェック
+          JP      Z,MALEND      ; 完了したら、このオブジェクトを消去（MALEND）して終了
+          ; --- パレットの減算値をセット ---
+          LD      (PLDAT),A     ; カウント値Aをそのまま減算値として書き込む
+                                ; (0=通常, 1=少し暗い ... 7=真っ暗)
+          CALL    PALETE        ; パレット更新ルーチンを呼び出し、実際に画面を暗くする
+          RET                   ; 次のフレームまで待機
 ;
 ;---- WORK AREA ----
 ;
-RDVDP:    DEFS    2
-WORK:     DEFS    3
-HYOUJI:   DEFS    120
-VIJUAL:   DEFB    0
-STACK:    DEFW    0
-SSTACK:   DEFW    0
-;
-SCROLL:   DEFB    0,0
-SCOLOR:   DEFB    3,1
-SWHICH:   DEFB    00001001B
-CONTRT:   DEFW    00
-DEADRT:   DEFW    00
-LIFE:     DEFB    16
-STOCK:    DEFB    3
-SCORE:    DEFW    00
-HSCORE:   DEFW    00
-GAGE:     DEFB    0,0,0,0,0,0
-MASTER:   DEFS    16
-PORIDAT:  DEFS    256
+RDVDP:    DEFS    2             ; VDPのポートアドレス（ベース）格納用
+                                ; (MAINルーチンで BC,(RDVDP+1) として使用)
+WORK:     DEFS    3             ; 3D回転演算（TURN）時の一時的な座標置き場
+                                ; (X, Y, Z の3バイト分)
+HYOUJI:   DEFS    120           ; 変換後の2D座標を格納するテーブル
+                                ; (最大で60頂点分、または複数の物体用)
+VIJUAL:   DEFB    0             ; 現在表示中のVRAMページ番号（0 または 1）
+                                ; (ダブルバッファリングの切り替えに使用)
+STACK:    DEFW    0             ; ゲーム内スタックの退避用
+SSTACK:   DEFW    0             ; システム（BIOS）スタックの退避用
+                                ; (エラー時や中断時の復帰ポイント)
+; --- ゲーム・コントロール ---
+SCROLL:   DEFB    0,0           ; 背景スクロール値（X, Y）
+SCOLOR:   DEFB    3,1           ; 描画色（ペン色と背景色など）
+SWHICH:   DEFB    00001001B     ; ★システム制御フラグ
+                                ; (bit0:スケーリング, bit3:ザコ敵描画 ...等のスイッチ)
+CONTRT:   DEFW    00            ; コントロールルーチンのアドレス
+DEADRT:   DEFW    00            ; プレイヤー死亡（LIFE=0）時のジャンプ先
+LIFE:     DEFB    16            ; プレイヤーの耐久力（16段階）
+STOCK:    DEFB    3             ; 残機
+SCORE:    DEFW    00            ; 現在のスコア
+HSCORE:   DEFW    00            ; ハイスコア
+GAGE:     DEFB    0,0,0,0,0,0   ; 当たり判定ボックス
+MASTER:   DEFS    16            ; 自機（マスターオブジェクト）専用のワーク
+                                ; (座標、AIポインタ、フラグ、回転角など)
+PORIDAT:  DEFS    256           ; ★エネミー・タスク・エリア
+                                ; (16バイトのワーク × 最大16個分)
 ;--------------------------------------------
 ;
 ; MAIN2
