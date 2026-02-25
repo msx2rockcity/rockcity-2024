@@ -81,15 +81,15 @@ MAINS:    PUSH    AF            ; ループカウンタ(AF)を保存
           ;
           CALL    CLS           ; 非表示側の画面をクリア（消去）
           LD      A,(SWHICH)    ; システムスイッチの状態をロード
-          BIT     0,A           ; bit0: スケーリング（拡大縮小）処理が必要か
-          CALL    NZ,SCALE      ; 必要なら拡大縮小計算を実行
+          BIT     0,A           ; bit0: 地平線表示処理が必要か
+          CALL    NZ,SCALE      ; 必要なら地平線表示を実行
           ;
           BIT     1,A           ; bit1: マスターオブジェクトの描画フラグ
           JR      Z,M1MA0       ; 0ならスキップ
           LD      IX,MASTER     ; 自機などのマスターオブジェクトをセット
           CALL    MALTI         ; AI実行 ＆ 3D描画！
-          BIT     2,A           ; bit2: セカンドマスター（敵ボスなど）のフラグ
-          CALL    NZ,MALTI      ; 必要ならさらに描画
+          BIT     2,A           ; bit2: スピードアップ状態かのフラグ
+          CALL    NZ,MALTI      ; 必要なら自機を2重に描画
           ;
 M1MA0:    BIT     3,A           ; bit3: ポリス（ザコ敵や弾）の群れを描画するか
           JR      Z,M1MA2       ; 0ならスキップ
@@ -147,7 +147,7 @@ M1MA3:    POP     AF            ; メインループの回数を確認
           RET                   ; 呼び出し元へ戻る
           ;
 RETURN:   LD      SP,(SSTACK)   ; 中断時：スタックポインタを安全な場所へ戻す
-          CALL    SDOFF         ; サウンドなどを停止
+          CALL    SDOFF         ; サウンドを停止
           JP      START         ; タイトル画面や最初へ戻る
 ;
 ;---- PORY WRITE ----
@@ -1245,166 +1245,176 @@ TOP2:	  EQU	  $
 ;
 ;---- MOJI HYOUJI ----
 ;
-MHYOUJ:   BIT     5,(IX+15)
-          JR      Z,HMOJI
-          LD      A,(IX+11)
-          OR      A
-          JR      NZ,M2ONH
-          LD      A,(IX+2)
-          OR      A
-          JR      Z,M2OFFH
-          DEC     (IX+2)
-          JR      MJIRET
-M2OFFH:   LD      A,(IX+10)
-          LD      (IX+2),A
-          LD      A,1
-          LD      (IX+11),A
-          JR      HMOJI
-M2ONH:    LD      A,(IX+2)
-          DEC     (IX+2)
-          OR      A
-          JR      NZ,HMOJI
-          LD      A,(IX+9)
-          LD      (IX+2),A
-          XOR     A
-          LD      (IX+11),A
-          JR      MJIRET
+; 文字列表示ルーチン
+;
+MHYOUJ:   BIT     5,(IX+15)     ; 点滅フラグ(bit5)を確認
+          JR      Z,HMOJI       ; フラグが0なら点滅させずに表示へ
+          ; --- 点滅処理開始 ---
+          LD      A,(IX+11)     ; 現在の状態（0:消灯中 / 1:点灯中）をロード
+          OR      A             ; 状態をチェック
+          JR      NZ,M2ONH      ; 点灯中なら「消去タイマー」へジャンプ
+          LD      A,(IX+2)      ; 消灯期間のカウンタをロード
+          OR      A             ; 0かどうかチェック
+          JR      Z,M2OFFH      ; 0になったら点灯状態へ切り替え
+          DEC     (IX+2)        ; カウンタを減らす
+          JR      MJIRET        ; 今回は何も表示せずに終了
+M2OFFH:   LD      A,(IX+10)     ; 点灯時間の長さ（ウェイト値）をロード
+          LD      (IX+2),A      ; カウンタにセット
+          LD      A,1           ; 状態を「点灯(1)」に設定
+          LD      (IX+11),A     ; ワークに保存
+          JR      HMOJI         ; 表示処理へ進む
+M2ONH:    LD      A,(IX+2)      ; 点灯期間のカウンタをロード
+          DEC     (IX+2)        ; カウンタを減らす
+          OR      A             ; 0になったかチェック
+          JR      NZ,HMOJI      ; まだ点灯期間内なら表示処理へ
+          LD      A,(IX+9)      ; 消灯時間の長さ（ウェイト値）をロード
+          LD      (IX+2),A      ; カウンタにセット
+          XOR     A             ; 状態を「消灯(0)」に設定
+          LD      (IX+11),A     ; ワークに保存
+          JR      MJIRET        ; 終了へ
+          ; --- 文字列の読み込み ---
+HMOJI:    LD      E,(IX+7)      ; 文字の色（パレット番号）を取得
+          LD      D,0           ; 
+          LD      (LIDAT+4),DE  ; VDP描画用カラーをセット
+          LD      H,(IX+4)      ; 表示文字列データのアドレス（上位）
+          LD      L,(IX+3)      ; ポインタの下位
+MJLOOP:   LD      A,(HL)        ; 文字コード（'A'など）を1つ読み込む
+          OR      A             ; 0（終端）かどうかチェック
+          JR      Z,MJIRET      ; 0なら全ての文字を表示し終えたので終了
+          INC     HL            ; 次のデータ（X座標オフセット）へ
+          LD      B,(HL)        ; X相対座標をロード
+          INC     HL            ; 次のデータ（Y座標オフセット）へ
+          LD      C,(HL)        ; Y相対座標をロード
+          INC     HL            ; 次の文字コードへポインタを進める
+          CALL    CALMOJ        ; 1文字分の線引き演算を実行
+          JR      MJLOOP        ; 文字列が終わるまで繰り返す
+          ; --- ルーチン終了判定 ---
+MJIRET:   LD      A,(IX+1)      ; 表示されてからの累積時間を確認
+          INC     (IX+1)        ; 時間を進める
+          CP      (IX+8)        ; 消滅設定時間（寿命）に達したか？
+          JP      Z,MALEND      ; 寿命ならオブジェクトを消去
+          RET                   ; 戻る
           ;
-HMOJI:    LD      E,(IX+7)
-          LD      D,0
-          LD      (LIDAT+4),DE
-          LD      H,(IX+4)
-          LD      L,(IX+3)
-MJLOOP:   LD      A,(HL)
-          OR      A
-          JR      Z,MJIRET
-          INC     HL
-          LD      B,(HL)
-          INC     HL
-          LD      C,(HL)
-          INC     HL
-          CALL    CALMOJ
-          JR      MJLOOP
-          ;
-MJIRET:   LD      A,(IX+1)
-          INC     (IX+1)
-          CP      (IX+8)
-          JP      Z,MALEND
-          RET
-          ;
-CALMOJ:   PUSH    HL
-          CP      41H
-          LD      D,30H
-          JR      C,$+4
-          LD      D,41H-10
-          SUB     D
-          ADD     A,A
-          LD      HL,MOJIDAT
-          ADD     A,L
-          JR      NC,$+3
-          INC     H
-          LD      L,A
-          LD      E,(HL)
-          INC     HL
-          LD      D,(HL)
-          EX      DE,HL
-          LD      A,B
-          ADD     A,(IX+12)
-          LD      B,A
-          LD      A,C
-          ADD     A,(IX+13)
-          LD      C,A
-          ;
-          LD      A,(HL)
-          ADD     A,A
-          ADD     A,(HL)
-          INC     HL
-          INC     HL
-          LD      E,A
-          LD      D,0
-          PUSH    HL
-          ADD     HL,DE
-          POP     DE
-          DEC     DE
-          DEC     DE
-          DEC     DE
-          ;
-LOOPMJ:   LD      A,(HL)
-          ADD     A,A
-          ADD     A,(HL)
-          PUSH    BC
-          PUSH    DE
-          ADD     A,E
-          JR      NC,$+3
-          INC     D
-          LD      E,A
-          LD      A,(DE)
-          INC     DE
-          BIT     1,(IX+15)
-          JR      Z,$+4
-          SLA     A
-          BIT     2,(IX+15)
-          JR      Z,$+4
-          SRA     A
-          ADD     A,B
-          LD      B,A
-          LD      A,(DE)
-          BIT     3,(IX+15)
-          JR      Z,$+4
-          SLA     A
-          BIT     4,(IX+15)
-          JR      Z,$+4
-          SRA     A
-          ADD     A,C
-          LD      C,A
-          LD      (LIDAT),BC
-          POP     DE
-          POP     BC
-          INC     HL
-          LD      A,(HL)
-          ADD     A,A
-          ADD     A,(HL)
-          PUSH    BC
-          PUSH    DE
-          ADD     A,E
-          JR      NC,$+3
-          INC     D
-          LD      E,A
-          LD      A,(DE)
-          INC     DE
-          BIT     1,(IX+15)
-          JR      Z,$+4
-          SLA     A
-          BIT     2,(IX+15)
-          JR      Z,$+4
-          SRA     A
-          ADD     A,B
-          LD      B,A
-          LD      A,(DE)
-          BIT     3,(IX+15)
-          JR      Z,$+4
-          SLA     A
-          BIT     4,(IX+15)
-          JR      Z,$+4
-          SRA     A
-          ADD     A,C
-          LD      C,A
-          LD      (LIDAT+2),BC
-          POP     DE
-          POP     BC
-          CALL    LINE
-          INC     HL
-          LD      A,(HL)
-          DEC     HL
-          OR      A
-          JR      NZ,LOOPMJ
-          INC     HL
-          INC     HL
-          LD      A,(HL)
-          OR      A
-          JR      NZ,LOOPMJ
-          POP     HL
-          RET
+CALMOJ:   PUSH    HL            ; 文字列ポインタを壊さないよう保存
+          CP      41H           ; 'A' (ASCII 41h) より小さいか？
+          LD      D,30H         ; 数字（'0'?）用の補正値を仮セット
+          JR      C,$+4         ; 'A'未満ならそのまま
+          LD      D,41H-10      ; 英字用の補正値に書き換え
+          SUB     D             ; インデックス（00h?）に変換
+          ADD     A,A           ; アドレス表は2バイト単位なので2倍にする
+          LD      HL,MOJIDAT    ; フォントのアドレス・テーブル
+          ADD     A,L           ; テーブル内のオフセットを加算
+          JR      NC,$+3        ; 桁上げチェック
+          INC     H             ; 
+          LD      L,A           ; HL = 定義アドレスが格納されている場所
+          LD      E,(HL)        ; 文字定義の開始アドレス（低位）を取得
+          INC     HL            ; 
+          LD      D,(HL)        ; 文字定義の開始アドレス（高位）を取得
+          EX      DE,HL         ; HL = 文字を構成する線データの先頭アドレス
+          ; --- 描画位置の基準設定 ---
+          LD      A,B           ; 文字列内でのXオフセット
+          ADD     A,(IX+12)     ; オブジェクト自体の中心X座標を加算
+          LD      B,A           ; B = 描画開始基準点X
+          LD      A,C           ; 文字列内でのYオフセット
+          ADD     A,(IX+13)     ; オブジェクト自体の中心Y座標を加算
+          LD      C,A           ; C = 描画開始基準点Y
+          ; --- 線データのヘッダ解析 ---
+          LD      A,(HL)        ; データの構成要素数を取得
+          ADD     A,A           ; 
+          ADD     A,(HL)        ; 3倍にする（3バイト1セット管理用）
+          INC     HL            ; 
+          INC     HL            ; 
+          LD      E,A           ; 
+          LD      D,0           ; 
+          PUSH    HL            ; 
+          ADD     HL,DE         ; 実際の座標成分が格納されている場所を計算
+          POP     DE            ; 
+          DEC     DE            ; ポインタ微調整
+          DEC     DE            ; 
+          DEC     DE            ; 
+          ; --- 文字を形作る線の描画ループ ---
+LOOPMJ:   LD      A,(HL)        ; 線の始点インデックスを取得
+          ADD     A,A           ; 
+          ADD     A,(HL)        ; 3倍にする
+          PUSH    BC            ; 基準座標(BC)を保存
+          PUSH    DE            ; データポインタを保存
+          ADD     A,E           ; 座標データの場所を特定
+          JR      NC,$+3        ; 
+          INC     D             ; 
+          LD      E,A           ; DE = 始点の座標データアドレス
+          LD      A,(DE)        ; 相対X座標を取得
+          INC     DE            ; 
+          ; --- 拡大・縮小処理（始点X） ---
+          BIT     1,(IX+15)     ; 拡大ビット確認
+          JR      Z,$+4         ; 
+          SLA     A             ; 2倍にする
+          BIT     2,(IX+15)     ; 縮小ビット確認
+          JR      Z,$+4         ; 
+          SRA     A             ; 1/2にする
+          ADD     A,B           ; 基準座標Bを加算
+          LD      B,A           ; B = 最終的な始点X
+          LD      A,(DE)        ; 相対Y座標を取得
+          ; --- 拡大・縮小処理（始点Y） ---
+          BIT     3,(IX+15)     ; 拡大ビット確認
+          JR      Z,$+4         ; 
+          SLA     A             ; 2倍にする
+          BIT     4,(IX+15)     ; 縮小ビット確認
+          JR      Z,$+4         ; 
+          SRA     A             ; 1/2にする
+          ADD     A,C           ; 基準座標Cを加算
+          LD      C,A           ; C = 最終的な始点Y
+          LD      (LIDAT),BC    ; VDP用データ構造に始点(X,Y)を格納
+          POP     DE            ; 保存したポインタを戻す
+          POP     BC            ; 基準座標を戻す
+          ; --- 終点データの計算 ---
+          INC     HL            ; 次のデータ（終点インデックス）へ
+          LD      A,(HL)        ; 終点インデックスを取得
+          ADD     A,A           ; 始点と同様に3倍計算
+          ADD     A,(HL)        ; 
+          PUSH    BC            ; 
+          PUSH    DE            ; 
+          ADD     A,E           ; 終点の座標データアドレス特定
+          JR      NC,$+3        ; 
+          INC     D             ; 
+          LD      E,A           ; DE = 終点の座標データアドレス
+          LD      A,(DE)        ; 相対X座標を取得
+          INC     DE            ; 
+          ; --- 拡大・縮小処理（終点X） ---
+          BIT     1,(IX+15)     ; 
+          JR      Z,$+4         ; 
+          SLA     A             ; 
+          BIT     2,(IX+15)     ; 
+          JR      Z,$+4         ; 
+          SRA     A             ; 
+          ADD     A,B           ; 
+          LD      B,A           ; B = 最終的な終点X
+          LD      A,(DE)        ; 相対Y座標を取得
+          ; --- 拡大・縮小処理（終点Y） ---
+          BIT     3,(IX+15)     ; 
+          JR      Z,$+4         ; 
+          SLA     A             ; 
+          BIT     4,(IX+15)     ; 
+          JR      Z,$+4         ; 
+          SRA     A             ; 
+          ADD     A,C           ; 
+          LD      C,A           ; C = 最終的な終点Y
+          LD      (LIDAT+2),BC  ; VDP用データ構造に終点(X,Y)を格納
+          POP     DE            ; 
+          POP     BC            ; 
+          ; --- 実描画 ---
+          CALL    LINE          ; ★VDPへLINEコマンドを送信！
+          INC     HL            ; 次の線データへ
+          LD      A,(HL)        ; まだ線があるかチェック
+          DEC     HL            ; 
+          OR      A             ; 
+          JR      NZ,LOOPMJ     ; 0でなければループ継続
+          INC     HL            ; 
+          INC     HL            ; 
+          LD      A,(HL)        ; 文字全体の終了チェック
+          OR      A             ; 
+          JR      NZ,LOOPMJ     ; 
+          POP     HL            ; 文字列ポインタを復帰
+          RET                   ; 戻る
 MOJIDAT:
 DEFW      M0,M1,M2,M3,M4,M5,M6
 DEFW      M7,M8,M9,MA,MB,MC,MD
@@ -1736,107 +1746,112 @@ DEFB      7,8,10,0,8,9,0,4,8,0,0
 ;
 ;---- WRITE LIFE GAGE ----
 ;
-WRLIFE:   PUSH    AF
-          PUSH    HL
-          LD      HL,0006H
-          LD      (LIDAT+4),HL
-          LD      H,178
-          LD      L,20
-          LD      (LIDAT+0),HL
-          LD      L,39
-          LD      (LIDAT+2),HL
-          CALL    LINE
-          LD      H,246
-          LD      (LIDAT+0),HL
-          LD      L,20
-          LD      (LIDAT+2),HL
-          CALL    LINE
-          LD      H,180
-          LD      L,30
-          LD      (LIDAT+0),HL
-          LD      H,244
-          LD      (LIDAT+2),HL
-          CALL    LINE
+; ライフゲージとスコアの表示
+;
+WRLIFE:   PUSH    AF            ; AFレジスタを保存
+          PUSH    HL            ; HLレジスタを保存
+          LD      HL,0006H      ; 色コード（6:ダークレッド付近？）をセット
+          LD      (LIDAT+4),HL  ; LINE命令のカラー引数に格納
+          LD      H,178         ; ゲージ左端のX座標
+          LD      L,20          ; ゲージ上端のY座標
+          LD      (LIDAT+0),HL  ; 始点(X,Y)としてセット
+          LD      L,39          ; 下端のY座標
+          LD      (LIDAT+2),HL  ; 終点(X,Y)としてセット
+          CALL    LINE          ; 左側の縦線を引く
+          LD      H,246         ; ゲージ右端のX座標
+          LD      (LIDAT+0),HL  ; 始点(X,Y)としてセット
+          LD      L,20          ; 
+          LD      (LIDAT+2),HL  ; 
+          CALL    LINE          ; 右側の縦線を引く
+          LD      H,180         ; 横線の左端
+          LD      L,30          ; 中央付近の高さ
+          LD      (LIDAT+0),HL  ; 
+          LD      H,244         ; 横線の右端
+          LD      (LIDAT+2),HL  ; 
+          CALL    LINE          ; 中央の水平線を引く（ゲージの土台）
           ;
-          LD      A,(LIFE)
-          RLCA
-          RLCA
-          ADD     A,180
-          LD      H,A
-          LD      L,24
-          LD      (LIDAT+0),HL
-          LD      L,36
-          LD      (LIDAT+2),HL
-          LD      HL,0009H
-          LD      (LIDAT+4),HL
-          CALL    LINE
+          LD      A,(LIFE)      ; 現在のライフ値をロード
+          RLCA                  ; 2倍にする
+          RLCA                  ; さらに2倍（計4倍）にして長さを計算
+          ADD     A,180         ; ゲージの開始位置(X=180)を加算
+          LD      H,A           ; H = 現在のライフに応じた右端X座標
+          LD      L,24          ; ゲージ中身の上端Y
+          LD      (LIDAT+0),HL  ; 始点(X,Y)をセット
+          LD      L,36          ; ゲージ中身の下端Y
+          LD      (LIDAT+2),HL  ; 終点(X,Y)をセット
+          LD      HL,0009H      ; 中身の色（9:ライトレッド付近？）
+          LD      (LIDAT+4),HL  ; 
+          CALL    LINE          ; ライフ残量を示す縦線を引く
           ;
-          CALL    STRIGB ;WSCOREが宣言されてた
-          JR      NZ,RETSC
-          LD      HL,(SCORE)
-          LD      IX,SCOREM+15
-          CALL    CHTEN
-          LD      A,(STOCK)
-          ADD     A,2FH
-          LD      (SCOREM+42),A
-          LD      IX,MDSCOR
-          CALL    MALTI
-RETSC:    POP     HL
-          POP     AF
-          RET
+          CALL    STRIGB        ; ジョイスティック・ボタンBの状態をチェック
+          JR      NZ,RETSC      ; 押されていなければ表示をスキップ
+          LD      HL,(SCORE)    ; 現在のスコアをロード
+          LD      IX,SCOREM+15  ; スコア数字を表示する文字列バッファの位置
+          CALL    CHTEN         ; 数値を表示用テキスト（ASCII）に変換
+          LD      A,(STOCK)     ; 残機（STOCK）をロード
+          ADD     A,2FH         ; ASCIIコードの数字（'0'は30H）に変換（1減算済みの補正）
+          LD      (SCOREM+42),A ; バッファ内の 'LEFT' の後の数字を書き換え
+          LD      IX,MDSCOR     ; スコア表示用オブジェクトの定義をロード
+          CALL    MALTI         ; ★ベクタフォントとして画面に描画！
+RETSC:    POP     HL            ; HLを復帰
+          POP     AF            ; AFを復帰
+          RET                   ; 戻る
           ;
 SCOREM:   DEFB    'S',20,30,'C',35,30,'O',50,30,'R',65,30,'E',80,30
-          DEFB     0,107,30,0,119,30,0,131,30,0,143,30,0,155,30
-          DEFB    'L',20,50,'E',35,50,'F',50,50,'T',65,50,'3',107,50,0
+          DEFB     0,107,30,0,119,30,0,131,30,0,143,30,0,155,30 ; ←ここにスコア数字が入る
+          DEFB    'L',20,50,'E',35,50,'F',50,50,'T',65,50,'3',107,50,0 ; 'LEFT'
           ;
-STRIGB:   PUSH    BC
-          PUSH    DE
-          LD      IY,(0FCC0H)
-          LD      IX,00D8H
-          LD      A,3
-          CALL    001CH
-          INC     A
-          JR      Z,RETSTR
-          LD      A,(0FBE5H+6)
-          AND     00000100B
-RETSTR:   POP     DE
-          POP     BC
-          RET
+STRIGB:   PUSH    BC            ; 
+          PUSH    DE            ; 
+          LD      IY,(0FCC0H)   ; EXPTBL: BIOSのあるスロットを取得
+          LD      IX,00D8H      ; GTTRIG: BIOSのトリガーチェックルーチン
+          LD      A,3           ; 3 = ジョイスティック2のボタンB（または特定の入力）
+          CALL    001CH         ; CALSLT: スロットをまたいでBIOS呼び出し
+          INC     A             ; 
+          JR      Z,RETSTR      ; 
+          LD      A,(0FBE5H+6)  ; キーボード・ジョイスティックのワークエリア参照
+          AND     00000100B     ; 特定のビット（ボタン状態）をマスク
+RETSTR:   POP     DE            ; 
+          POP     BC            ; 
+          RET                   ;
           ;
-MDSCOR:   DEFB    1,0,0
-          DEFW    SCOREM,MHYOUJ
-          DEFB    8,1,0,0,0,0,0,0,00010101B
+MDSCOR:   DEFB     1,0,0        ; オブジェクト有効フラグなど
+          DEFW     SCOREM,MHYOUJ; 描画データ（SCOREM）と描画関数（MHYOUJ）へのポインタ
+          DEFB     8,1,0,0,0,0,0,0,00010101B ; 拡大率や属性フラグ
 ;
 ;---- CHANGE TEN ----
+; 
+; 10進数に変換するルーチン
 ;
-CHTEN:    PUSH    DE
-          LD      DE,10000
-          CALL    DOWNGE
-          LD      (IX+0),A
-          LD      DE,1000
-          CALL    DOWNGE
-          LD      (IX+3),A
-          LD      DE,100
-          CALL    DOWNGE
-          LD      (IX+6),A
-          LD      DE,10
-          CALL    DOWNGE
-          LD      (IX+9),A
-          LD      DE,1
-          CALL    DOWNGE
-          LD      (IX+12),A
-          POP     DE
-          RET
+CHTEN:    PUSH    DE            ; DEレジスタを保存
+          LD      DE,10000      ; 万の桁を求めるために10000をセット
+          CALL    DOWNGE        ; 10000がいくつあるか計算
+          LD      (IX+0),A      ; 結果（ASCII文字）をバッファの1桁目に格納
+          LD      DE,1000       ; 千の桁を求めるために1000をセット
+          CALL    DOWNGE        ; 1000がいくつあるか計算
+          LD      (IX+3),A      ; 結果をバッファの2桁目に格納（※3バイト飛ばしは文字・X・Y構成のため）
+          LD      DE,100        ; 百の桁を求めるために100をセット
+          CALL    DOWNGE        ; 100がいくつあるか計算
+          LD      (IX+6),A      ; 結果をバッファの3桁目に格納
+          LD      DE,10         ; 十の桁を求めるために10をセット
+          CALL    DOWNGE        ; 10がいくつあるか計算
+          LD      (IX+9),A      ; 結果をバッファの4桁目に格納
+          LD      DE,1          ; 一の桁を求めるために1をセット
+          CALL    DOWNGE        ; 1がいくつあるか計算
+          LD      (IX+12),A     ; 結果をバッファの5桁目に格納
+          POP     DE            ; DEレジスタを復帰
+          RET                   ; 呼び出し元（WRLIFEなど）へ戻る
           ;
-DOWNGE:   XOR     A
-          OR      A
-          SBC     HL,DE
-          JR      C,$+5
-          INC     A
-          JR      DOWNGE+1
-          ADD     HL,DE
-          ADD     A,30H
-          RET
+DOWNGE:   XOR     A             ; Aレジスタ（カウント用）を0にクリア
+          OR      A             ; キャリーフラグをクリア
+          SBC     HL,DE         ; HLからDE（桁の重み）を引く
+          JR      C,$+5         ; もし引ききれなくなったら（負になったら）ループ脱出
+          INC     A             ; 引けた回数を1増やす
+          JR      DOWNGE+1      ; 再び引き算（OR Aの次へジャンプしてループ）
+          ADD     HL,DE         ; 引きすぎた分を足して元に戻す（余りが出る）
+          ADD     A,30H         ; 引けた回数に'0'の文字コード(30H)を足してASCII化
+          RET                   ; 1つの桁の計算を終了して戻る
+          ;
 ;--------------------------------------------------
 ;
 ;  MAIN3
@@ -1846,162 +1861,186 @@ DOWNGE:   XOR     A
 ;---- MALTI STAGE SUB ROUTINE ----
 ;
 ;
-; TRIGER & STICK
+; TRIGER CHECK
 ;
-STRIG:    PUSH    BC
-          PUSH    DE
-          PUSH    HL
-          PUSH    IX
-          XOR     A
-          LD      IX,GTTRIG
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          INC     A
-          JR      Z,M3STRT
-          LD      IX,GTTRIG
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          INC     A
-M3STRT:   POP     IX
-          POP     HL
-          POP     DE
-          POP     BC
-          RET
+; トリガーボタン、またはスペースキーのチェック
+;
+STRIG:    PUSH    BC            ; レジスタを破壊しないよう保存
+          PUSH    DE            ; 
+          PUSH    HL            ; 
+          PUSH    IX            ; 
           ;
-STICK:    PUSH    BC
-          PUSH    DE
-          PUSH    HL
-          PUSH    IX
-          XOR     A
-          LD      IX,GTSTCK
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          OR      A
-          JR      NZ,RETSTI
-          INC     A
-          LD      IX,GTSTCK
-          LD      IY,(EXPTBL-1)
-          CALL    CALSLT
-          OR      A
-RETSTI:   POP     IX
-          POP     HL
-          POP     DE
-          POP     BC
-          RET
+          XOR     A             ; A = 0 (トリガー0：スペースキーまたはジョイスティック1のボタンA)
+          LD      IX,GTTRIG     ; BIOSのGTTRIG(00D8H)ルーチンアドレスを指定
+          LD      IY,(EXPTBL-1) ; メインスロット（BIOSがあるスロット）の情報をロード
+          CALL    CALSLT        ; スロットを切り替えてBIOSルーチンを実行
+                                ; 戻り値 A: 00H(オフ) / FFH(オン)
+          INC     A             ; AがFFHならINC Aで0(ZフラグON)になる
+          JR      Z,M3STRT      ; もしボタンが押されていたら、あとのチェックを飛ばして終了へ
+          ;
+          LD      IX,GTTRIG     ; (冗長に見えるが、確実に再チェックまたは
+          LD      IY,(EXPTBL-1) ; 別の入力系統を想定している可能性あり)
+          CALL    CALSLT        ; 再度トリガー状態を確認
+          INC     A             ; 
+          ;
+M3STRT:   POP     IX            ; 保存していたレジスタを全て復帰
+          POP     HL            ; 
+          POP     DE            ; 
+          POP     BC            ; 
+          RET                   ; Zフラグ等の状態を持って戻る
+;
+; STICK CHECK
+;
+; カーソルキーまたはジョイパッドの十字キーチェック
+;
+STICK:    PUSH    BC            ; BCレジスタを保存
+          PUSH    DE            ; DEレジスタを保存
+          PUSH    HL            ; HLレジスタを保存
+          PUSH    IX            ; IXレジスタを保存
+          ; --- まずはカーソルキー(0)をチェック ---
+          XOR     A             ; A = 0 (カーソルキーを指定)
+          LD      IX,GTSTCK     ; BIOSのGTSTCK(00D4H)ルーチンアドレスを設定
+          LD      IY,(EXPTBL-1) ; BIOSがあるスロット情報をロード
+          CALL    CALSLT        ; スロットをまたいでBIOSを実行
+          OR      A             ; Aの結果（0:停止, 1-8:方向）をチェック
+          JR      NZ,RETSTI     ; 0以外（入力あり）なら、その値を保持して終了へ
+          ; --- 入力がなければジョイスティック1(1)をチェック ---
+          INC     A             ; A = 1 (ジョイスティック1を指定)
+          LD      IX,GTSTCK     ; 再度GTSTCKのアドレスを設定
+          LD      IY,(EXPTBL-1) ; 
+          CALL    CALSLT        ; スロットをまたいでBIOSを実行
+          OR      A             ; Aの結果をチェック（0 or 方向値）
+          ; --- レジスタ復帰と終了 ---
+RETSTI:   POP     IX            ; 保存していたレジスタを全て復帰
+          POP     HL            ; 
+          POP     DE            ; 
+          POP     BC            ; 
+          RET                   ; Aに入力値（方向）を入れた状態で戻る
 ;
 ; DEAD ROUTINE
 ;
-DEAD:     CALL    EXPLO
-		  LD      SP,(STACK)
-          LD      HL,DEADPT
-          LD      (MASTER+5),HL 
-          LD      A,(SWHICH)
-          AND     11101111B
-          LD      (SWHICH),A
-          LD      HL,0
-          LD      (GAGE),HL
-          LD      A,45
-          CALL    MAIN
-          CALL    FADE
-          LD      A,8
-          CALL    MAIN
-          LD      A,(STOCK)
-          DEC     A
-          JP      Z,GMOVER
-          LD      (STOCK),A
-          CALL    MSSTR
-          LD      HL,(CONTRT)
-          JP      (HL)
+; 自機の破壊ルーチン
+;
+DEAD:     CALL    EXPLO         ; 爆発音または爆発エフェクトを呼び出し
+          LD      SP,(STACK)    ; スタックポインタをゲーム開始時の状態に復帰
+          LD      HL,DEADPT     ; 自機用の「撃墜時専用AIルーチン」のアドレスをロード
+          LD      (MASTER+5),HL ; 自機(MASTER)のプログラムポインタを書き換え
+          LD      A,(SWHICH)    ; システムスイッチをロード
+          AND     11101111B     ; bit4をオフにする（ゲームオーバー判定などを一時停止）
+          LD      (SWHICH),A    ; スイッチを更新
+          LD      HL,0          ; 
+          LD      (GAGE),HL     ; パワーアップゲージ等をリセット
+          LD      A,45          ; 45フレーム分の待ち時間を設定
+          CALL    MAIN          ; MAINループを回して爆発中の画面を表示し続ける
+          CALL    FADE          ; 画面を暗転（フェードアウト）させる
+          LD      A,8           ; 8フレーム分の待ち時間
+          CALL    MAIN          ; 暗転状態で少し待機
+          LD      A,(STOCK)     ; 残機（ストック）をロード
+          DEC     A             ; 1つ減らす
+          JP      Z,GMOVER      ; 残機が0になったらゲームオーバールーチンへ
+          LD      (STOCK),A     ; 残った機数を保存
+          CALL    MSSTR         ; 自機の初期位置・状態を再設定（再スタート準備）
+          LD      HL,(CONTRT)   ; ゲーム本編のコントロールルーチンをロード
+          JP      (HL)          ; 本編へ復帰（復活！）
           ;
-DEADPT:   LD      A,(IX+9)
-          ADD     A,6
-          CP      200
-          JR      NC,$+12
-          LD      (IX+9),A
-          INC     (IX+10)
-          INC     (IX+10)
-          RET
-          LD      A,00011000B
-          LD      (IX+15),A
-          LD      A,(SWHICH)
-          AND     11111001B
-          LD      (SWHICH),A
-          RET
+DEADPT:   LD      A,(IX+9)      ; 自機の内部パラメータ（おそらくZ座標または速度）をロード
+          ADD     A,6           ; 値を増やす（遠ざかる、あるいは落下する演出）
+          CP      200           ; 一定値（200）に達したかチェック
+          JR      NC,$+12       ; 達していれば、下の「消滅処理」へスキップ
+          LD      (IX+9),A      ; 更新した値を保存
+          INC     (IX+10)       ; 別のパラメータ（回転角など）を増加させて
+          INC     (IX+10)       ; 激しくスピンさせる演出
+          RET                   ; 1フレーム分の演出終了
+          ; --- 演出終了後の設定変更（上のNC条件が成立したとき実行） ---
+          LD      A,00011000B   ; 特殊なフラグ（描画オフなど）をセット
+          LD      (IX+15),A     ; 
+          LD      A,(SWHICH)    ; システムスイッチをロード
+          AND     11111001B     ; bit1, bit2などをオフにして自機の描画を完全に止める
+          LD      (SWHICH),A    ; 
+          RET                   ; 戻る
 ;
 ; TUCH ROUTINE ( 0 - 4 )
 ;
-TUCH0:    CALL    PISTOL
-          RET
+;---- 被弾音のみ ----
+TUCH0:    CALL    PISTOL        ; 被弾音（または火花エフェクト）を呼び出し
+          RET                   ; 何もせず戻る（演出用、あるいは弾を弾いた？）
           ;
-TUCH1:    CALL    PISTOL
-          LD      A,(SWHICH)
-          BIT     5,A
-          RET     NZ
-          LD      A,(LIFE)
-          OR      A
-          JR      Z,$+6
-          DEC     A
-          LD      (LIFE),A
-          XOR     A
-          LD      (IX+0),A
-          RET
+;---- 破壊オブジェクトに当たった処理　ダメージ1 ----
+TUCH1:    CALL    PISTOL        ; 被弾音を鳴らす
+          LD      A,(SWHICH)    ; システムスイッチをロード
+          BIT     5,A           ; bit5: 無敵フラグ（？）をチェック
+          RET     NZ            ; 無敵状態ならダメージ処理をスキップ
+          LD      A,(LIFE)      ; 現在のライフをロード
+          OR      A             ; すでに0かチェック
+          JR      Z,$+6         ; 0なら引かずに次へ
+          DEC     A             ; ライフを 1 減らす
+          LD      (LIFE),A      ; 更新したライフを保存
+          XOR     A             ; 
+          LD      (IX+0),A      ; 当たった敵オブジェクトを消滅させる
+          RET                   ; 戻る
           ;
-TUCH2:    CALL    PISTOL
-          XOR     A
-          LD      (IX+2),A
-          LD      A,(MASTER+13)
-          LD      (LIDAT+4),A
-          LD      A,(SWHICH)
-          BIT     5,A
-          RET     NZ
-          LD      A,(LIFE)
-          SUB     2
-          JR      NC,$+3
-          XOR     A
-          LD      (LIFE),A
-          RET
+;---- 破壊不能オブジェクトに当たった処理　ダメージ2 ----
+TUCH2:    CALL    PISTOL        ; 被弾音を鳴らす
+          XOR     A             ; 
+          LD      (IX+2),A      ; オブジェクトの特定パラメータをリセット
+          LD      A,(MASTER+13) ; 自機の属性（色？）を取得
+          LD      (LIDAT+4),A   ; 描画用の色としてセット（被弾フラッシュ用？）
+          LD      A,(SWHICH)    ; システムスイッチをロード
+          BIT     5,A           ; 無敵チェック
+          RET     NZ            ; 無敵なら戻る
+          LD      A,(LIFE)      ; ライフをロード
+          SUB     2             ; ライフを 2 減らす（痛い！）
+          JR      NC,$+3        ; マイナスにならなければOK
+          XOR     A             ; マイナスなら0に固定
+          LD      (LIFE),A      ; ライフを保存
+          RET                   ; 戻る
           ;
-TUCH3:    CALL    ITEMGT
-          CALL    MOVESD
-          LD      A,(LIFE)
-          ADD     A,4
-          CP      17
-          JR      C,$+4
-          LD      A,16
-          LD      (LIFE),A
-          XOR     A
-          LD      (IX+0),A
-          LD      (IX+2),A
-          RET
+;---- 回復アイテム（キュアー）に当たった処理
+TUCH3:    CALL    ITEMGT        ; アイテム取得音を鳴らす
+          CALL    MOVESD        ; 移動音（または取得演出）を呼び出し
+          LD      A,(LIFE)      ; 現在のライフをロード
+          ADD     A,4           ; ライフを 4 回復！
+          CP      17            ; 最大値（16）を超えたかチェック
+          JR      C,$+4         ; 超えていなければそのまま
+          LD      A,16          ; 最大値を16に固定
+          LD      (LIFE),A      ; ライフを保存
+          XOR     A             ; 
+          LD      (IX+0),A      ; アイテムオブジェクトを消滅させる
+          LD      (IX+2),A      ; 
+          RET                   ; 戻る
           ;
-TUCH4:    CALL    ITEMGT
-          CALL    MOVESD
-          LD      A,(SWHICH)
-          XOR     00000100B
-          LD      (SWHICH),A
-          XOR     A
-          LD      (IX+0),A
-          LD      (IX+2),A
-          RET
+;---- スピードアップアイテムに当たった処理
+TUCH4:    CALL    ITEMGT        ; アイテム取得音を鳴らす
+          CALL    MOVESD        ; 
+          LD      A,(SWHICH)    ; システムスイッチをロード
+          XOR     00000100B     ; bit2を反転（スピードアップフラグを反転）
+          LD      (SWHICH),A    ; スイッチを更新
+          XOR     A             ; 
+          LD      (IX+0),A      ; アイテムオブジェクトを消滅させる
+          LD      (IX+2),A      ; 
+          RET                   ; 戻る
 ;
 ; MASTER START ROUTINE
 ;
-MSSTR:    LD      HL,MSSTDT
-          LD      DE,MASTER
-          LD      BC,16
-          LDIR
-          LD      A,16
-          LD      (LIFE),A
-          LD      A,(SWHICH)
-          OR      00010010B
-          LD      (SWHICH),A
-          CALL    CLSPRI
-          CALL    DSET
-          DEFW    STARTM,MHYOUJ
-          DEFB    7,24,1,1,0,40
-          DEFB    0,0,00110101B
-          CALL    UNFADE
-          RET
+; 自機のスタート演出ルーチン
+;
+MSSTR:    LD      HL,MSSTDT     ; 自機の初期状態データ（16バイト）のアドレス
+          LD      DE,MASTER     ; 自機のメインワークエリア
+          LD      BC,16         ; 転送サイズ
+          LDIR                  ; 初期データをワークへ一括コピー（LDIRは便利ですね！）
+          LD      A,16          ; 
+          LD      (LIFE),A      ; ライフを最大値(16)に回復
+          LD      A,(SWHICH)    ; システムスイッチをロード
+          OR      00010010B     ; bit1(自機描画), bit4(死亡判定)をONにする
+          LD      (SWHICH),A    ; スイッチを更新
+          CALL    CLSPRI        ; スプライト（もしあれば）を消去してクリーンに
+          ; --- 「GO AHEAD」メッセージのセット ---
+          CALL    DSET          ; 表示タスク登録（メッセージ表示用）
+          DEFW    STARTM,MHYOUJ ; 表示データ(STARTM)と描画関数(MHYOUJ)を指定
+          DEFB    7,24,1,1,0,40 ; 色、寿命、拡大率などのパラメータ
+          DEFB    0,0,00110101B ; フラグ設定
+          CALL    UNFADE        ; 暗転していた画面を徐々に明るくする
+          RET                   ; メインへ戻る
           ;
 MSSTDT:   DEFB    1,0,0
           DEFW    MSDATA,STARPT
@@ -2017,42 +2056,48 @@ STARTM:   DEFB    'G',40,80
           DEFB    'A',120,80
           DEFB    'D',135,80,0
           ;
-STARPT:   LD      A,(IX+9)
-          SUB     8
-          CP      16
-          JR      C,$+6
-          LD      (IX+9),A
-          RET
-          LD      HL,KEY
-          LD      (IX+5),L
-          LD      (IX+6),H
-          RET
+STARPT:   LD      A,(IX+9)      ; 自機のZ座標（または距離）をロード
+          SUB     8             ; 値を減らす（奥から手前に近づく）
+          CP      16            ; 所定の位置（16）まで来たかチェック
+          JR      C,$+6         ; 到達していれば、次の「操作開始」処理へ
+          LD      (IX+9),A      ; 到達していなければ、更新したZ座標を保存
+          RET                   ; 1フレーム終了
+          ; --- 操作開始（演出終了） ---
+          LD      HL,KEY        ; 通常時の操作ルーチン（キー入力受付）のアドレス
+          LD      (IX+5),L      ; 自機のAIポインタを書き換える（上位・下位）
+          LD      (IX+6),H      ; これにより次フレームからプレイヤーが操縦可能に！
+          RET                   ; 戻る
 ;
 ; TURBO ROUTINE
 ;
-TURBO:    LD      A,0
-          INC     A
-          LD      (TURBO+1),A
-          AND     15
-          RET     NZ
-          CALL    RND
-          CP      200
-          JR      NC,$-5
-          ADD     A,30
-          LD      (TURBRD+4),A
-          CALL    RND
-          CP      185
-          JR      NC,$-5
-          ADD     A,40
-          LD      (TURBRD+5),A
-          CALL    DSET
-TURBRD:   DEFW    TURBPT,TURBMV
-          DEFB    0,0,255,0,0,0
-          DEFB    13,4,00000000B
-          RET
+; ターボアイテム作成ルーチン
+;
+TURBO:    LD      A,0           ; カウンタ（この'0'の部分が下のINC Aで書き換わる）
+          INC     A             ; カウンタを増やす
+          LD      (TURBO+1),A   ; ★自己書き換え：INCした値を上の'LD A,n'のnに書き戻す
+          AND     15            ; 下位4ビットをチェック（16フレームに1回を判定）
+          RET     NZ            ; 0でなければ（16の倍数フレーム以外）何もしない
+          ; --- 出現X座標の決定 ---
+          CALL    RND           ; 乱数を取得
+          CP      200           ; 画面端に寄りすぎないよう制限
+          JR      NC,$-5        ; 200以上なら乱数をやり直し
+          ADD     A,30          ; 座標をオフセット（画面内に収める）
+          LD      (TURBRD+4),A  ; 生成データ(TURBRD)のX座標を書き換え
+          ; --- 出現Y座標の決定 ---
+          CALL    RND           ; 乱数を取得
+          CP      185           ; Y座標の範囲制限
+          JR      NC,$-5        ; 範囲外ならやり直し
+          ADD     A,40          ; 座標をオフセット
+          LD      (TURBRD+5),A  ; 生成データ(TURBRD)のY座標を書き換え
+          ; --- オブジェクト登録 ---
+          CALL    DSET          ; タスクエリアへ新しいオブジェクトを登録
+TURBRD:   DEFW    TURBPT,TURBMV ; 形状データ(TURBPT)と移動関数(TURBMV)のポインタ
+          DEFB    0,0,255,0,0,0 ; パラメータ群（Z座標など）
+          DEFB    13,4,00000000B; 色（13:マゼンタ系？）やフラグ
+          RET                   ; 終了
           ;
-TURBMV:   CALL    MOVE
-          DEFB    0,0,-16,0,3,0
+TURBMV:   CALL    MOVE          ; 座標移動ルーチンを呼び出し
+          DEFB    0,0,-16,0,3,0 ; 相対移動量（Z方向に-16、高速で手前に迫る！）
           ;
 TURBPT:   DEFB    9,0
           DEFB     12,-24,  0
@@ -2069,39 +2114,46 @@ TURBPT:   DEFB    9,0
 ;
 ; CURE ROUTINE
 ;
-CURE:     LD      A,0
-          INC     A
-          LD      (CURE+1),A
-          AND     31
-          RET     NZ
-          CALL    RND
-          CP      205
-          JR      NC,$-5
-          ADD     A,25
-          LD      (CURERD+4),A
-          CALL    RND
-          CP      190
-          JR      NC,$-5
-          ADD     A,33
-          LD      (CURERD+5),A
-          CALL    DSET
-CURERD:   DEFW    CURPD1,CUREMV
-          DEFB    0,0,255,0,0,0
-          DEFB    9,3,00000000B
+; ライフ回復アイテム作成ルーチン
+;
+CURE:     LD      A,0           ; カウンタ（下のINCで書き換わる）
+          INC     A             ; カウンタを増やす
+          LD      (CURE+1),A    ; ★自己書き換え：値を保存
+          AND     31            ; 32フレームに1回かどうか判定
+          RET     NZ            ; 0以外なら生成せずに終了
+          ; --- 出現X座標の決定 ---
+          CALL    RND           ; 乱数取得
+          CP      205           ; 範囲チェック
+          JR      NC,$-5        ; 範囲外ならやり直し
+          ADD     A,25          ; 座標オフセット
+          LD      (CURERD+4),A  ; 生成データ(CURERD)のX座標を書き換え
+          ; --- 出現Y座標の決定 ---
+          CALL    RND           ; 乱数取得
+          CP      190           ; 範囲チェック
+          JR      NC,$-5        ; 
+          ADD     A,33          ; 座標オフセット
+          LD      (CURERD+5),A  ; 生成データ(CURERD)のY座標を書き換え
+          ; --- アイテム登録 ---
+          CALL    DSET          ; オブジェクトをタスクに登録
+CURERD:   DEFW    CURPD1,CUREMV ; 形状1(CURPD1)と移動AI(CUREMV)を指定
+          DEFB    0,0,255,0,0,0 ; Z座標など(奥の255からスタート)
+          DEFB    9,3,00000000B ; 色(9:ライトレッド/回復っぽい色)
           RET
           ;
-CUREMV:   LD      A,(IX+1)
-          INC     (IX+1)
-          LD      HL,CURPD1
-          AND     2
-          JR      NZ,$+5
-          LD      HL,CURPD2
-          LD      (IX+4),H
-          LD      (IX+3),L
-          LD      A,(IX+9)
-          SUB     24
-          LD      (IX+9),A
-          RET
+CUREMV:   LD      A,(IX+1)      ; オブジェクトの経過フレーム数をロード
+          INC     (IX+1)        ; フレームを進める
+          LD      HL,CURPD1     ; 基本形状1を仮セット
+          AND     2             ; ビット1をチェック（数フレームごとに切り替え）
+          JR      NZ,$+5        ; ビットが立っていれば形状1のまま
+          LD      HL,CURPD2     ; ビットが立っていなければ形状2に差し替え
+          ; --- 形状データのポインタをリアルタイム更新 ---
+          LD      (IX+4),H      ; ワークエリア内の形状ポインタ(上位)を書き換え
+          LD      (IX+3),L      ; 形状ポインタ(下位)を書き換え
+          ; --- 移動処理 ---
+          LD      A,(IX+9)      ; 現在のZ座標をロード
+          SUB     24            ; 手前に 24 移動（かなり速い！）
+          LD      (IX+9),A      ; 更新
+          RET                   ; 終了
           ;
 CURPD1:   DEFB    6,0
           DEFB      0,-18,  0
@@ -2125,73 +2177,128 @@ CURPD2:   DEFB    6,0
 ;
 ; TECHNOITE ROUTINE
 ;
-TECHPT:   DEFB    6,0
-          DEFB    -23,-23,  3
-          DEFB      0, 18,  3
-          DEFB     18,  0,  3
-          DEFB    -23,-23, -3
-          DEFB      0, 18, -3
-          DEFB     18,  0, -3
-          DEFB    1,2,3,1,0,4,5,6,4,0
-          DEFB    1,4,0,2,5,0,3,6,0,0
-          ;
-TECHMV:   CALL    MOVE
-          DEFB    0,0,-26,0,0,3
-          ;
-TECHNO:   CALL    RND
-          CP      215
-          JR      NC,$-5
-          ADD     A,23
-          LD      (TECHRD+4),A
-          CALL    RND
-          CP      215
-          JR      NC,$-5
-          ADD     A,23
-          LD      (TECHRD+5),A
-          CALL    RND
-          LD      C,8
-          AND     15
-          JR      Z,M3CJ4
-          LD      C,7
-          CP      13
-          JR      NC,M3CJ4
-          LD      C,3
-          CP      9
-          JR      NC,M3CJ4
-          LD      C,10
-M3CJ4:    LD      A,C
-          LD      (TECHRD+10),A
-          CALL    DSET
-TECHRD:   DEFW    TECHPT,TECHMV
-          DEFB    0,0,255,0,0,0
-          DEFB    0,5,00000000B
+; 得点アイテム(テクノイト）作成ルーチン
+;
+TECHNO:   CALL    RND           ; 乱数でX座標を決定
+          CP      215           ; 
+          JR      NC,$-5        ; 
+          ADD     A,23          ; 
+          LD      (TECHRD+4),A  ; X座標セット
+          CALL    RND           ; 乱数でY座標を決定
+          CP      215           ; 
+          JR      NC,$-5        ; 
+          ADD     A,23          ; 
+          LD      (TECHRD+5),A  ; Y座標セット
+          ; --- ここから色の抽選 ---
+          CALL    RND           ; 乱数取得
+          LD      C,8           ; 基本色を 8 (400点) に設定
+          AND     15            ; 1/16の確率をチェック
+          JR      Z,M3CJ4       ; 当たりなら 8 のまま確定
+          LD      C,7           ; 次の候補を 7 (200点) に設定
+          CP      13            ; 
+          JR      NC,M3CJ4      ; 
+          LD      C,3           ; 次の候補を 3 (100点) に設定
+          CP      9             ; 
+          JR      NC,M3CJ4      ; 
+          LD      C,10          ; どれにも漏れたら 10 (50点)
+M3CJ4:    LD      A,C           ; 決定した色コードをAへ
+          LD      (TECHRD+10),A ; オブジェクトの色(IX+13相当)として保存
+          CALL    DSET          ; オブジェクト登録
+          ; --- 登録データ ---
+TECHRD:   DEFW    TECHPT,TECHMV ; 
+          DEFB    0,0,255,0,0,0 ; 
+          DEFB    0,5,00000000B ; ※ここの10バイト目が色に書き換わる
           RET
           ;
-TUCH5:    CALL    ITEMGT
-		  CALL	  MOVESD
-          LD      A,(IX+13)
-          LD      DE,400
-          CP      8
-          JR      Z,M3TJ5
-          LD      DE,200
-          CP      7
-          JR      Z,M3TJ5
-          LD      DE,100
-          CP      3
-          JR      Z,M3TJ5
-          LD      DE,50
-M3TJ5:    LD      HL,(SCORE)
-          ADD     HL,DE
-          JR      NC,$+5
-          LD      HL,65535
-          LD      (SCORE),HL
-          XOR     A
-          LD      (IX+0),A
-          LD      (IX+2),A
-          RET
+TECHPT:   DEFB    6,0           ; 頂点数: 6個
+          ; --- 頂点座標 (X, Y, Z) ---
+          DEFB    -23,-23,  3   ; 頂点1（前面）
+          DEFB      0, 18,  3   ; 頂点2
+          DEFB     18,  0,  3   ; 頂点3
+          DEFB    -23,-23, -3   ; 頂点4（背面）
+          DEFB      0, 18, -3   ; 頂点5
+          DEFB     18,  0, -3   ; 頂点6
+          ; --- コネクションリスト ---
+          DEFB    1,2,3,1,0     ; 前面の三角形
+          DEFB    4,5,6,4,0     ; 背面の三角形
+          DEFB    1,4,0,2,5,0,3,6,0,0 ; 前後を結ぶ柱（厚みを出す）
+
+TECHMV:   CALL    MOVE          ; 移動ルーチン呼び出し
+          DEFB    0,0,-26,0,0,3 ; Z方向に -26（CUREよりさらに速い！）
+          ;
+          ; テクノイト専用当たり処理ルーチン
+          ;
+TUCH5:    CALL    ITEMGT        ; 取得音
+          CALL    MOVESD        ; 演出音
+          LD      A,(IX+13)     ; このアイテムの色を取得
+          LD      DE,400        ; 色が 8 なら 400点
+          CP      8             ; 
+          JR      Z,M3TJ5       ; 
+          LD      DE,200        ; 色が 7 なら 200点
+          CP      7             ; 
+          JR      Z,M3TJ5       ; 
+          LD      DE,100        ; 色が 3 なら 100点
+          CP      3             ; 
+          JR      Z,M3TJ5       ; 
+          LD      DE,50         ; それ以外（10）なら 50点
+M3TJ5:    LD      HL,(SCORE)    ; 現在のスコアをロード
+          ADD     HL,DE         ; 得点を加算
+          JR      NC,$+5        ; カンスト（桁あふれ）チェック
+          LD      HL,65535      ; 最大値で固定
+          LD      (SCORE),HL    ; スコア保存
+          XOR     A             ; 
+          LD      (IX+0),A      ; アイテム消去
+          LD      (IX+2),A      ; 
+          RET                   ;
 ;
 ; MINING PARTY ROUTINE
 ;
+; 救助を待つ人間＆キャンプの生成ルーチン
+;
+PARTY:    CALL    RND           ; 乱数取得
+          CP      224           ; X座標の範囲チェック
+          JR      NC,$-5        ; 
+          ADD     A,12          ; 
+          LD      (PARRD+4),A   ; 出現X座標をセット
+          CALL    RND           ; もう一度乱数取得
+          AND     7             ; 確率1/8をチェック
+          LD      HL,PARPD1     ; パターン1（静止体）を仮セット
+          LD      DE,PARMV      ; 移動ルーチン1を仮セット
+          LD      C,7           ; 色コードを7に設定
+          JR      Z,PARJP1      ; 1/8の確率に当たればパターン1で確定
+          LD      HL,PARPD2     ; それ以外ならパターン2（アニメーション体）
+          LD      DE,PARMV2     ; 移動ルーチン2（アニメ変更あり）
+          LD      C,6           ; 色コードを6に設定
+PARJP1:   LD      (PARRD+0),HL  ; 生成データ(PARRD)の形状ポインタを書き換え
+          LD      (PARRD+2),DE  ; 生成データの移動AIポインタを書き換え
+          LD      A,C           ; 
+          LD      (PARRD+11),A  ; 生成データの色(IX+13相当)を書き換え
+          CALL    DSET          ; オブジェクトをタスクに登録
+PARRD:    DEFW    PARPD1,PARMV  ; （ここが上の処理でリアルタイムに書き換わる）
+          DEFB    0,255,255,0,0,0 ; Z座標：奥(255)からスタート
+          DEFB    15,6,00000000B; 
+          RET                   ;
+          ; --- パターン1：単純移動 ---
+PARMV:    LD      A,(IX+9)      ; Z座標をロード
+          ADD     A,-24         ; 手前に高速移動
+          JP      NC,MALEND     ; 手前を通り過ぎたらオブジェクト消去
+          LD      (IX+9),A      ; 座標更新
+          RET                   ; 
+          ; --- パターン2：形状切り替え＋移動 ---
+PARMV2:   LD      A,(IX+1)      ; 経過フレーム数をロード
+          INC     (IX+1)        ; 
+          LD      HL,PARPD2     ; 形状Aを仮セット
+          AND     2             ; アニメーション速度調整
+          JR      Z,PARJP2      ; 
+          LD      HL,PARPD3     ; 形状Bに切り替え
+PARJP2:   LD      (IX+4),H      ; 現在のオブジェクトの形状ポインタを書き換え
+          LD      (IX+3),L      ; 
+          LD      A,(IX+9)      ; 
+          ADD     A,-24         ; 手前に移動
+          JP      NC,MALEND     ; 消去判定
+          LD      (IX+9),A      ; 
+          RET                   ;
+          ;
 PARPD1:   DEFB    7,0
           DEFB    -12,  0,-12
           DEFB     -5,  0, 16
@@ -2226,119 +2333,86 @@ PARPD3:   DEFB    9,0
           DEFB     -5,  0,  0
           DEFB    1,2,3,0,2,4,5,6,0,2,7,8,0,7,9,0,0  
           ;
-PARTY:    CALL    RND
-          CP      224
-          JR      NC,$-5
-          ADD     A,12
-          LD      (PARRD+4),A
-          CALL    RND
-          AND     7
-          LD      HL,PARPD1
-          LD      DE,PARMV
-          LD      C,7
-          JR      Z,PARJP1
-          LD      HL,PARPD2
-          LD      DE,PARMV2
-          LD      C,6
-PARJP1:   LD      (PARRD+0),HL
-          LD      (PARRD+2),DE
-          LD      A,C
-          LD      (PARRD+11),A
-          CALL    DSET
-PARRD:    DEFW    PARPD1,PARMV
-          DEFB    0,255,255,0,0,0
-          DEFB    15,6,00000000B
-          RET
+          ; 人間＆キャンプ用の当たりルーチン
           ;
-PARMV:    LD      A,(IX+9)
-          ADD     A,-24
-          JP      NC,MALEND
-          LD      (IX+9),A
-          RET
-          ;
-PARMV2:   LD      A,(IX+1)
-          INC     (IX+1)
-          LD      HL,PARPD2
-          AND     2
-          JR      Z,PARJP2
-          LD      HL,PARPD3
-PARJP2    LD      (IX+4),H
-          LD      (IX+3),L
-          LD      A,(IX+9)
-          ADD     A,-24
-          JP      NC,MALEND
-          LD      (IX+9),A
-          RET
-          ;
-TUCH6:    CALL    ITEMGT
-          CALL    MOVESD
-          LD      A,(IX+14)
-          LD      DE,250
-          CP      6
-          JR      Z,$+5
-          LD      DE,500
-          LD      HL,(SCORE)
-          ADD     HL,DE
-          JR      NC,$+5
-          LD      HL,65535
-          LD      (SCORE),HL
-          XOR     A
-          LD      (IX+0),A
-          LD      (IX+2),A
-          RET
+TUCH6:    CALL    ITEMGT        ; アイテム取得音
+          CALL    MOVESD        ; 演出音
+          LD      A,(IX+14)     ; オブジェクトの色（属性）を確認
+          LD      DE,250        ; 基本は250点
+          CP      6             ; 色が6（パターン2）なら
+          JR      Z,$+5         ; 
+          LD      DE,500        ; 500点にアップ！
+          LD      HL,(SCORE)    ; 
+          ADD     HL,DE         ; スコア加算
+          JR      NC,$+5        ; 
+          LD      HL,65535      ; 
+          LD      (SCORE),HL    ; 
+          XOR     A             ; 
+          LD      (IX+0),A      ; オブジェクト消去
+          LD      (IX+2),A      ; 
+          RET                   ;
 ;
-; RUNDUM ROUTINE
+; RANDOM ROUTINE
 ;
-RND:      PUSH    BC
-          LD      BC,0
-          LD      A,R
-          ADD     A,C
-          ADD     A,B
-          LD      C,B
-          LD      B,A
-          LD      (RND+2),BC
-          POP     BC
-          RET
+; 乱数生成ルーチン
+;
+RND:      PUSH    BC            ; BCレジスタを破壊しないよう保存
+          LD      BC,0          ; ★自己書き換え対象：ここには「前回の乱数値」が蓄積される
+          LD      A,R           ; Z80のRレジスタ（リフレッシュレジスタ）の値をロード
+                                ; ※Rレジスタはメモリのリフレッシュ用に常に高速にカウントアップしている
+          ADD     A,C           ; 前回の乱数(C)を今のRレジスタに加算
+          ADD     A,B           ; さらに前回の乱数(B)も加算して混ぜ合わせる
+          LD      C,B           ; Bの値をCにスライド（フィボナッチ的な混合）
+          LD      B,A           ; 新しく計算されたA（乱数）をBに保存
+          LD      (RND+2),BC    ; ★自己書き換え：次回の計算のため、BCの値を上の「LD BC,0」の0の部分に書き込む
+          POP     BC            ; BCレジスタを復帰
+          RET                   ; Aレジスタに乱数が入った状態で戻る
 ;
 ; HOME POSITION RETURN
 ;
-HOME:     LD      A,3
-          LD      (IX+1),A
-          LD      A,(IX+7)
-          CP      128
-          JR      Z,YPOS
-          JR      C,M3HJ1
-          SUB     16
-          LD      (IX+7),A
-          INC     (IX+10)
-          RET
-M3HJ1:    ADD     A,16
-          LD      (IX+7),A
-          DEC     (IX+10)
-          RET
-YPOS:     LD      A,2
-          LD      (IX+1),A
-          LD      A,(IX+8)
-          CP      128
-          JR      Z,ZPOS
-          JR      C,M3HJ2
-          SUB     4
-          LD      (IX+8),A
-          RET
-M3HJ2:    ADD     A,4
-          LD      (IX+8),A
-          RET
-ZPOS:     LD      A,1
-          LD      (IX+1),A
-          LD      A,(IX+9)
-          CP      16
-          JR      Z,M3HJ3
-          SUB     4
-          LD      (IX+9),A
-          RET
-M3HJ3:    XOR     A
-          LD      (IX+1),A
-          RET
+; 自動で自機をホームポジションに戻すルーチン
+;    ZONE3の扇風機状の物体でも使用する
+;
+HOME:     LD      A,3           ; ステータス「3」をセット（X軸調整中）
+          LD      (IX+1),A      ; 
+          LD      A,(IX+7)      ; 現在のX座標をロード
+          CP      128           ; 中心（128）にあるか比較
+          JR      Z,YPOS        ; ぴったりなら次のY軸チェックへ
+          JR      C,M3HJ1       ; 128より小さければ右へ移動（加算）へ
+          SUB     16            ; 128より大きいので左へ16ドット寄せる
+          LD      (IX+7),A      ; X座標を更新
+          INC     (IX+10)       ; 帰還中の演出用（回転角などを増やす）
+          RET                   ; 1フレーム終了
+M3HJ1:    ADD     A,16          ; 128より小さいので右へ16ドット寄せる
+          LD      (IX+7),A      ; 
+          DEC     (IX+10)       ; 帰還中の演出用（回転角を減らす）
+          RET                   ;
+          ;
+YPOS:     LD      A,2           ; ステータス「2」をセット（Y軸調整中）
+          LD      (IX+1),A      ; 
+          LD      A,(IX+8)      ; 現在のY座標をロード
+          CP      128           ; 中心（128）にあるか比較
+          JR      Z,ZPOS        ; ぴったりなら次のZ軸チェックへ
+          JR      C,M3HJ2       ; 128より小さければ下へ移動へ
+          SUB     4             ; 128より大きいので上へ4ドット寄せる
+          LD      (IX+8),A      ; Y座標を更新
+          RET                   ; 
+M3HJ2:    ADD     A,4           ; 128より小さいので下へ4ドット寄せる
+          LD      (IX+8),A      ; 
+          RET                   ;
+          ;
+ZPOS:     LD      A,1           ; ステータス「1」をセット（Z軸調整中）
+          LD      (IX+1),A      ; 
+          LD      A,(IX+9)      ; 現在のZ座標（距離）をロード
+          CP      16            ; 前方の定位置（16）にあるか比較
+          JR      Z,M3HJ3       ; ぴったりなら完了へ
+          SUB     4             ; まだ遠くにいるなら手前へ4近づける
+          LD      (IX+9),A      ; Z座標を更新
+          RET                   ; 
+          ; --- 全ての軸がホームに到達 ---
+M3HJ3:    XOR     A             ; ステータスを「0」にリセット
+          LD      (IX+1),A      ; 帰還完了フラグ
+          RET                   ;
 ;------------------------------------------------
 ;
 ; SOUND 
