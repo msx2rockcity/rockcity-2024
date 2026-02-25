@@ -23,6 +23,6 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 2026/02/25 ver変更なし<BR>Geminiでアセンブラソースのコア部分にコメントを入れてみた<BR><BR>
 
 最終バージョンのMSXPen ver2.1.1
-https://msxpen.com/codes/-OmH4s-1H-OuA7j6tHrC
+https://msxpen.com/codes/-OmI8dCOKz_b3aJP5NmY
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
