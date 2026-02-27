@@ -2,11 +2,11 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 2.1.1
+;  MSXPen LAST VERSION VER 2.2.0
 ;
 ;  PROGRAM by msx2rockcity
 ;
-;  (C) Copyright 1993-2025 msx2rockcity
+;  (C) Copyright 1993-2026 msx2rockcity
 ;
 ;*********************************************************
 ;-------------------------------------------
@@ -22,8 +22,9 @@ CALSLT:   EQU     001CH
 WRTPSG:   EQU	  0093H
 EXPTBL:   EQU     0FCC1H
 MJVER:    EQU     '2'
-MIVER:    EQU     '1'
-PTVER:    EQU     '1'
+MIVER:    EQU     '2'
+PTVER:    EQU     '0'
+DSTOCK    EQU     9
           ORG     09000H
 ;
 ;---- SCREEN & COLOR SET ----
@@ -968,7 +969,10 @@ MOVE:     PUSH    IX            ; 現在のオブジェクトのワークエリア先頭(IX)を保存
           LD      A,(DE)        ; 
           ADD     A,(HL)        ; 
           LD      (HL),A        ; (IX+12)を更新
-          RET                   ; 更新完了、戻る
+          ;
+          INC	  DE            ; スタックを調整
+          PUSH    DE
+          RET                   ; データの後に戻る
 ;
 ; TURN SUB 
 ;
@@ -2098,6 +2102,7 @@ TURBRD:   DEFW    TURBPT,TURBMV ; 形状データ(TURBPT)と移動関数(TURBMV)のポインタ
           ;
 TURBMV:   CALL    MOVE          ; 座標移動ルーチンを呼び出し
           DEFB    0,0,-16,0,3,0 ; 相対移動量（Z方向に-16、高速で手前に迫る！）
+          RET
           ;
 TURBPT:   DEFB    9,0
           DEFB     12,-24,  0
@@ -2225,6 +2230,7 @@ TECHPT:   DEFB    6,0           ; 頂点数: 6個
 
 TECHMV:   CALL    MOVE          ; 移動ルーチン呼び出し
           DEFB    0,0,-26,0,0,3 ; Z方向に -26（CUREよりさらに速い！）
+          RET
           ;
           ; テクノイト専用当たり処理ルーチン
           ;
@@ -2418,7 +2424,9 @@ M3HJ3:    XOR     A             ; ステータスを「0」にリセット
 ; SOUND 
 ;
 ;------------------------------------------------
-
+;
+;サウンドオールOFF
+;
 SDOFF:		CALL	SOUND
 			DEFB	0,0H
             DEFB	1,0H
@@ -2435,17 +2443,9 @@ SDOFF:		CALL	SOUND
             DEFB	13,0H
             DEFB	0FFH
             RET
-
-SDWAIT:     PUSH BC
-    		LD   BC,6000
-DLOOP:
-    		DEC  BC
-    		LD   A,B
-    		OR   C
-    		JR   NZ,DLOOP
-    		POP  BC
-    		RET
-            
+;
+; エンジン音
+;
 MOVESD:		CALL	SOUND
 			DEFB	0,28H
             DEFB	1,00H
@@ -2454,7 +2454,9 @@ MOVESD:		CALL	SOUND
             DEFB	8,6
             DEFB	0FFH
             RET
-
+;
+; ダメージ音
+;
 PISTOL:	 	CALL	SOUND
 			DEFB	2,14H
             DEFB	3,01H
@@ -2465,18 +2467,9 @@ PISTOL:	 	CALL	SOUND
             DEFB	13,0H
             DEFB 	0FFH
             RET
-
-PISTOL2:	CALL	SOUND
-            DEFB	7,0B7H
-            DEFB	6,7H
-            DEFB	8,10H
-            DEFB	11,0A8H
-            DEFB	12,0DH
-            DEFB	13,0H
-            DEFB	0FFH
-            CALL    SDWAIT
-            RET
-            
+;
+; 自機の破壊音
+;
 EXPLO:		CALL	SOUND
 			DEFB	7,0B6H
             DEFB	8,10H
@@ -2488,60 +2481,10 @@ EXPLO:		CALL	SOUND
             DEFB	13,0H
             DEFB	0FFH
             RET
-            
-WAVE:       CALL    SOUND
-            DEFB    7,0B7H
-            DEFB    6,7H
-            DEFB    8,10H
-            DEFB    11,7AH
-            DEFB    12,0DAH
-            DEFB    13,0EH
-            DEFB    0FFH
-            RET
-            
-SOUND1:     CALL    SOUND
-            DEFB    1,0E0H  ; チャンネルAの周波数下位バイト（音程）
-            DEFB    2,00H   ; チャンネルAの周波数上位バイト
-            DEFB    8,18H   ; エンベロープパターン（急速に減衰）
-            DEFB    13,0FH  ; 音量を最大に
-            DEFB    0FFH
-            RET
-            
-SOUND2:     CALL    SOUND
-            DEFB    7,0B7H  ; ノイズチャンネル設定（白ノイズ）
-            DEFB    6,01H   ; ノイズ周波数（低い音から開始）
-            DEFB    8,10H   ; エンベロープパターン（徐々に減衰）
-            DEFB    13,0FH  ; 音量を最大に
-            DEFB    0FFH
-            RET
-            
-SOUND3:     CALL    SOUND
-            DEFB    1,080H  ; チャンネルAの周波数下位バイト（中音）
-            DEFB    2,00H   ; チャンネルAの周波数上位バイト
-            DEFB    8,08H   ; エンベロープパターン（定常音）
-            DEFB    13,0AH  ; 音量を中程度に
-            DEFB    0FFH
-            RET
-            
-SOUND4:     CALL    SOUND
-            DEFB    1,07AH  ; チャンネルAの周波数下位バイト（高音）
-            DEFB    2,00H   ; チャンネルAの周波数上位バイト
-            DEFB    8,10H   ; エンベロープパターン（急速に減衰）
-            DEFB    13,0EH  ; 音量を少し下げる
-            DEFB    0FFH
-            RET
-            
-SELSOUND:   RET
-			CALL    SOUND
-            DEFB    7,0B7H
-            DEFB    8,10H
-            DEFB    6,20H
-            DEFB    11,0A8H
-            DEFB    12,0DH
-            DEFB    13,0EH
-            DEFB    0FFH
-            RET
-            
+            ;
+;
+; サウンドレジスタセットルーチン
+;
 SOUND:		EX		(SP),HL
             PUSH	DE
             PUSH 	AF
@@ -2557,20 +2500,11 @@ SND2:		POP 	AF
 			POP 	DE
             EX 		(SP),HL
             RET
-            
-KEYOFF:
-            DI
-            LD      A,07H
-            OUT     (99H),A
-            LD      A,80H
-            OUT     (99H),A 
-            LD      A,(9911)
-            AND     10111111B
-            OUT     (9911),A
-            EI
-            RET
-            
-                ; PSGレジスタ書き込み用ポート
+            ;
+;
+; アイテムゲット音ORセレクトサウンド
+;            
+; PSGレジスタ書き込み用ポート
 PSG_ADDR EQU &HA0      ; PSGアドレスポート
 PSG_DATA EQU &HA1      ; PSGデータポート
 
@@ -2655,11 +2589,9 @@ ITEMGT:
     		OUT  (C),A
             POP  BC
             POP  AF
-
     		; プログラム終了
     		RET
-
-    		; ディレイサブルーチン（約20ms）
+; ディレイサブルーチン（約20ms）
 DELAY:
     		PUSH BC
     		LD   BC,5000       ; ディレイ調整（MSX2の3.58MHzで約20ms）
@@ -2670,81 +2602,177 @@ DELAY_LOOP:
     		JR   NZ,DELAY_LOOP
     		POP  BC
     		RET
-
+;---------------------------------
+;
+; 未使用サウンドルーチン
+;
+;---------------------------------
+SDWAIT:     PUSH BC
+    		LD   BC,6000
+DLOOP:
+    		DEC  BC
+    		LD   A,B
+    		OR   C
+    		JR   NZ,DLOOP
+    		POP  BC
+    		RET
+            ;
+PISTOL2:	CALL	SOUND
+            DEFB	7,0B7H
+            DEFB	6,7H
+            DEFB	8,10H
+            DEFB	11,0A8H
+            DEFB	12,0DH
+            DEFB	13,0H
+            DEFB	0FFH
+            CALL    SDWAIT
+            RET
+            ;
+WAVE:       CALL    SOUND
+            DEFB    7,0B7H
+            DEFB    6,7H
+            DEFB    8,10H
+            DEFB    11,7AH
+            DEFB    12,0DAH
+            DEFB    13,0EH
+            DEFB    0FFH
+            RET
+            ;
+SOUND1:     CALL    SOUND
+            DEFB    1,0E0H  ; チャンネルAの周波数下位バイト（音程）
+            DEFB    2,00H   ; チャンネルAの周波数上位バイト
+            DEFB    8,18H   ; エンベロープパターン（急速に減衰）
+            DEFB    13,0FH  ; 音量を最大に
+            DEFB    0FFH
+            RET
+            ;
+SOUND2:     CALL    SOUND
+            DEFB    7,0B7H  ; ノイズチャンネル設定（白ノイズ）
+            DEFB    6,01H   ; ノイズ周波数（低い音から開始）
+            DEFB    8,10H   ; エンベロープパターン（徐々に減衰）
+            DEFB    13,0FH  ; 音量を最大に
+            DEFB    0FFH
+            RET
+            ;
+SOUND3:     CALL    SOUND
+            DEFB    1,080H  ; チャンネルAの周波数下位バイト（中音）
+            DEFB    2,00H   ; チャンネルAの周波数上位バイト
+            DEFB    8,08H   ; エンベロープパターン（定常音）
+            DEFB    13,0AH  ; 音量を中程度に
+            DEFB    0FFH
+            RET
+            ;
+SOUND4:     CALL    SOUND
+            DEFB    1,07AH  ; チャンネルAの周波数下位バイト（高音）
+            DEFB    2,00H   ; チャンネルAの周波数上位バイト
+            DEFB    8,10H   ; エンベロープパターン（急速に減衰）
+            DEFB    13,0EH  ; 音量を少し下げる
+            DEFB    0FFH
+            RET
+            ;
+SELSOUND:   RET
+			CALL    SOUND
+            DEFB    7,0B7H
+            DEFB    8,10H
+            DEFB    6,20H
+            DEFB    11,0A8H
+            DEFB    12,0DH
+            DEFB    13,0EH
+            DEFB    0FFH
+            RET
+            ;
+KEYOFF:
+            DI
+            LD      A,07H
+            OUT     (99H),A
+            LD      A,80H
+            OUT     (99H),A 
+            LD      A,(9911)
+            AND     10111111B
+            OUT     (9911),A
+            EI
+            RET
 ;------------------------------------------------
 ;
-; LOGO DEMO とりあえず設置
+; LOGO DEMO
 ;
 ;------------------------------------------------
 ;
-LOGODEMO: LD      IX,SCOLOR
-          LD      A,15
-          LD      (IX+0),A
-          LD      A,1
-          LD      (IX+1),A
-          LD      A,00001000B
-          LD      (IX+2),A
-          
-          CALL    CLSPRI
-          CALL    UNFADE
-          LD      A,8
-          CALL    MAIN
+LOGODEMO: 
+          LD      IX,SCOLOR     ; 色管理ワークエリアのベースアドレスをセット
+          LD      A,15          ; 白色（パレット15）
+          LD      (IX+0),A      ; ターゲット色設定
+          LD      A,1           ; 
+          LD      (IX+1),A      ; フラグまたは増分設定
+          LD      A,00001000B   ; ビット属性設定
+          LD      (IX+2),A      
           ;
-          CALL    DSET
-          DEFW    LOGODATA,LOGOMV2
-          DEFB    128,128,160,-30,0,0
-          DEFB    15,0,00101000B
+          CALL    CLSPRI        ; スプライトの消去
+          CALL    UNFADE        ; フェードイン開始（画面を明るくする）
+          LD      A,8           ; 
+          CALL    MAIN          ; 8フレームMAIN実行
           ;
-          LD      A,24
+          ; ロゴのメイン移動設定
+          CALL    DSET          ; 表示オブジェクト(タスク)の登録
+          DEFW    LOGODATA,LOGOMV2 ; データ定義と移動ルーチン(LOGOMV2)を指定
+          DEFB    128,128,160,-30,0,0 ; X, Y, Z, 移動速度などの初期パラメータ
+          DEFB    15,0,00101000B ; 色、属性など
+          ;
+          LD      A,24          ; 24フレームMAIN実行
           CALL    MAIN
-          CALL    FADE
-          LD      A,10
+          CALL    FADE          ; フェードアウト開始
+          LD      A,10          ; 10フレームMAIN実行
           CALL    MAIN
-          JP      TITLE
+          JP      TITLE         ; タイトル画面ルーチンへ遷移
           ;          
+; --- Mの移動 ---
 LOGOMV11:  
-		  CALL    MOVE
-          DEFB   -1,0,20
-          DEFB    2,3,0
+          CALL    MOVE          ; 座標更新ルーチン呼び出し
+          DEFB    -1,0,20       ; X速度:-1, Y速度:0, 期間:20
+          DEFB     2,3,0        ; 加速度などのパラメータ
           RET
+; --- Sの移動 ---
 LOGOMV12:  
-		  CALL    MOVE
-          DEFB    0,1,20
-          DEFB    0,3,2
+          CALL    MOVE
+          DEFB     0,1,20       ; X速度:0, Y速度:1, 期間:20
+          DEFB     0,3,2
           RET
+; --- Xの移動 ---
 LOGOMV13:  
-		  CALL    MOVE
-          DEFB    1,0,20
-          DEFB    3,0,2
+          CALL    MOVE
+          DEFB     1,0,20       ; X速度:1, Y速度:0, 期間:20
+          DEFB     3,0,2
+          RET
+; --- MSXロゴの移動ルーチン ---
+LOGOMV2:  LD      A,(IX+9)      ; ワークエリアから現在の内部状態を取得
+          CP      10            ; 状態が10に達したか？
+          JR      Z,MV2JR       ; 達していれば移動スキップ
+          CALL    MOVE          ; 通常移動処理
+          DEFB    0,0,-15       ; Z軸方向（奥・手前）の動き
+          DEFB    3,-0,0
           RET
           ;
-LOGOMV2:  LD 	  A,(IX+9)
-		  CP      10
-          JR      Z,MV2JR
-		  CALL    MOVE
-          DEFB    0,0,-15
-          DEFB    3,-0,0
-MV2JR:    
-          INC     (IX+1)
+MV2JR:    INC     (IX+1)        ; カウンタをインクリメント
           LD      A,(IX+1)
-          CP      16
-          JR      NZ,MV2JR2   
-          CALL    DSET
+          CP      16            ; カウンタが16になったか？
+          JR      NZ,MV2JR2     ; 16未満ならテキスト表示へ
+          ; --- カウンタ16到達時：ロゴを3つのパーツに分離して再登録 ---
+          CALL    DSET          ; パーツ(M)登録
           DEFW    LGMDATA,LOGOMV11
           DEFB    58,128,10,0,0,0
           DEFB    15,0,00101000B
-          CALL    DSET
+          CALL    DSET          ; パーツ(S)登録
           DEFW    LGSDATA,LOGOMV12
           DEFB    128,128,10,0,0,0
           DEFB    15,0,00101000B
-          CALL    DSET
+          CALL    DSET          ; パーツ(X)登録
           DEFW    LGXDATA,LOGOMV13
           DEFB    193,128,10,0,0,0
           DEFB    15,0,00101000B
-          JP      MALEND
-MV2JR2:   
+          JP      MALEND        ; このオブジェクト（親ロゴ）を消去して終了
+MV2JR2:   ; 
           CALL    DSET
-          DEFW    LGDEMOMJ,MHYOUJ
+          DEFW    LGDEMOMJ,MHYOUJ ; テキストデータと表示ルーチン(MHYOUJ)
           DEFB    15,0,0,0,0,0
           DEFB    0,0,00010101B 
           RET
@@ -2770,23 +2798,6 @@ LGMDATA:  DEFB    13,0
           DEFB    -10,-40,0
           DEFB    1,2,3,4,5,6,7,8,9,10,11,12,13,1,0,0
 ;
-;---- X POINT DATA ----
-;
-LGXDATA:  DEFB    12,0
-          DEFB	  -40,-40,0
-          DEFB    -10,  0,0
-          DEFB    -40,+40,0
-          DEFB    -20,+40,0
-          DEFB      0,+15,0
-          DEFB    +20,+40,0
-          DEFB    +40,+40,0
-          DEFB    +10,  0,0
-          DEFB    +40,-40,0
-          DEFB    +20,-40,0 
-          DEFB      0,-15,0
-          DEFB    -20,-40,0
-          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,1,0,0
-;
 ;---- S POINT DATA ----
 ;
 LGSDATA:  DEFB    14,0
@@ -2805,9 +2816,25 @@ LGSDATA:  DEFB    14,0
           DEFB    +40,-20,0
           DEFB    +30,-40,0
           DEFB    1,2,3,4,5,6,7,8,9,10,11,12,13,14,1,0,0
-
 ;
-;---- LOGO POINT DATA ----
+;---- X POINT DATA ----
+;
+LGXDATA:  DEFB    12,0
+          DEFB	  -40,-40,0
+          DEFB    -10,  0,0
+          DEFB    -40,+40,0
+          DEFB    -20,+40,0
+          DEFB      0,+15,0
+          DEFB    +20,+40,0
+          DEFB    +40,+40,0
+          DEFB    +10,  0,0
+          DEFB    +40,-40,0
+          DEFB    +20,-40,0 
+          DEFB      0,-15,0
+          DEFB    -20,-40,0
+          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,1,0,0
+;
+;---- MSX LOGO POINT DATA ----
 ;
 LOGODATA: DEFB    35,0
 		  DEFB	  -90,-40,0
@@ -2855,277 +2882,359 @@ LOGODATA: DEFB    35,0
 ; TITLE DEMO
 ;
 ;------------------------------------------------
-;
-;---- TITLE DEMO ----
-;
-TITLE:    LD      IX,SCOLOR
-          LD      A,2
+TITLE:    LD      IX,SCOLOR     ; 色管理ワークエリア設定
+          LD      A,2           ; ターゲット色をカラー2に変更
           LD      (IX+0),A
           LD      A,1
           LD      (IX+1),A
-          LD      A,00001001B
+          LD      A,00001001B   ; 属性設定
           LD      (IX+2),A
           ;
-MENSET:   CALL    CLSPRI
-          CALL    UNFADE
-          
-          CALL    VERDISP
-          LD      A,4
+MENSET:   CALL    CLSPRI        ; スプライト消去
+          CALL    UNFADE        ; フェードイン開始
+          LD      A,4           ; 4フレームMAINを実行
           CALL    MAIN
-          CALL    DSSS   ;MOJI
-          DEFW    MR
-          DEFB    44,70
+          
+          ; --- タイトルロゴ（上段）の描画 ---
+          ; DSSSを使い、MR, MO, MC, MK という文字データを順に配置
           CALL    DSSS
-          DEFW    MO
+          DEFW    MR            ; 'R'
+          DEFB    44,70         ; X, Y座標
+          CALL    DSSS
+          DEFW    MO            ; 'O'
           DEFB    100,70
           CALL    DSSS
-          DEFW    MC
+          DEFW    MC            ; 'C'
           DEFB    156,70
           CALL    DSSS
-          DEFW    MK
+          DEFW    MK            ; 'K'
           DEFB    212,70
-          LD      A,3
-          CALL    MAIN
-          CALL    DSSS
-          DEFW    MC
-          DEFB     44,178
-          CALL    DSSS
-          DEFW    MI
-          DEFB    100,178
-          CALL    DSSS
-          DEFW    MT
-          DEFB    156,178
-          CALL    DSSS
-          DEFW    MY
-          DEFB    212,178
-          LD      A,77
+          ;
+          LD      A,3           ; 3フレームMAINを実行
           CALL    MAIN
           ;
+          ; --- タイトルロゴ（下段）の描画 ---
+          CALL    DSSS
+          DEFW    MC            ; 'C'
+          DEFB     44,178
+          CALL    DSSS
+          DEFW    MI            ; 'I'
+          DEFB    100,178
+          CALL    DSSS
+          DEFW    MT            ; 'T'
+          DEFB    156,178
+          CALL    DSSS
+          DEFW    MY            ; 'Y'
+          DEFB    212,178
+          ;
+          LD      A,77          ; 77フレームMAINを実行
+          CALL    MAIN
+          ;
+          ; --- 自機オブジェクトの表示 ---
           CALL    DSET
           DEFW    MSDATA,PATER2
           DEFB    128,128,255
           DEFB    0,0,0,3,0
           DEFB    00101000B
-          LD      A,34
+          ;
+          LD      A,34          ; 34フレームMAINを実行
           CALL    MAIN
+          ;
+          ; --- 「PUSH SPACE」メッセージオブジェクトの登録 ---
           CALL    DSET
           DEFW    STMESG,MJIPAT
           DEFB    3,255,0,2,0,50
           DEFB    50,0,00100101B
           ;
-          LD      B,0
-LOSTI:    CALL    STRIG
-          JP      Z,NEXTGO
-          CALL    MAIN
-          DJNZ    LOSTI
-          CALL    FADE
-          LD      A,10
-          CALL    MAIN
-          CALL    WSCORE
-          JP      TITLE
+          ; --- 入力待ちループ ---
+          LD      B,0           ; ループカウンタ(256回)
+LOSTI:    CALL    STRIG         ; ジョイスティック/スペースキーの入力チェック
+          JP      Z,NEXTGO      ; 入力があればゲーム開始(NEXTGO)へ
+          CALL    MAIN          ; 入力がなければメインループ続行
+          DJNZ    LOSTI         ; Bが0になるまで繰り返し
           ;
-NEXTGO:   CALL    ITEMGT
-          CALL    FADE
-          LD      A,16
+          ; --- 一定時間入力がない場合はデモへ戻る ---
+          CALL    FADE          ; フェードアウト
+          LD      A,10          ; 10フレームMAINを実行
           CALL    MAIN
-          JP      SELECT
+          CALL    WSCORE        ; ハイスコア表示デモへ
+          JP      TITLE         ; タイトルループの最初に戻る
           ;
-DSSS:     POP     HL
-          LD      E,(HL)
-          INC     HL
-          LD      D,(HL)
-          INC     HL
-          LD      C,(HL)
-          INC     HL
-          LD      B,(HL)
-          INC     HL
-          LD      (DSSD+0),DE
-          LD      (DSSD+4),BC
-          CALL    DSET
-DSSD:     DEFW    0,PATER1,0
-          DEFB    250,0,0,16,3,0
-          DEFB    001010B
-          PUSH    HL
-          LD      A,1
+          ; --- ゲーム開始処理 ---
+NEXTGO:   CALL    ITEMGT        ; スタートサウンドコール
+          CALL    FADE          ; 画面切り替えのフェード
+          LD      A,16          ; 16フレームMAINを実行
           CALL    MAIN
-          RET
+          JP      SELECT        ; ゲームモードセレクトデモへ
+;
+; 3D文字の登録ルーチン
+;
+DSSS:     POP     HL          ; スタックから戻り先アドレスを取得
+                              ; (CALL直後のデータのアドレスがHLに入る)
+          ; --- 引数1: アドレス(DE相当)の読み込み ---
+          LD      E,(HL)      ; データ1バイト目
+          INC     HL
+          LD      D,(HL)      ; データ2バイト目
+          INC     HL
+          ; --- 引数2: パラメータ(BC相当)の読み込み ---
+          LD      C,(HL)      ; データ3バイト目
+          INC     HL
+          LD      B,(HL)      ; データ4バイト目
+          INC     HL
+          ; --- 取得したデータを実行用ワーク(DSSD)へ転送 ---
+          LD      (DSSD+0),DE ; 取得したDEをDSSDの先頭(DEFW 0の部分)に上書き
+          LD      (DSSD+4),BC ; 取得したBCをDSSDのオフセット4に上書き
+          ; --- オブジェクトの登録実行 ---
+          CALL    DSET        ; 自己書き換えされたDSSDを元にタスク登録
+DSSD:     DEFW    0,PATER1,0  ; ※実行時に先頭の0が引数DEで書き換わる
+          DEFB    250,0,0,16,3,0 ; 固定パラメータ（座標や速度など）
+          DEFB    001010B     ; 属性
+          ; --- 呼び出し元への復帰処理 ---
+          PUSH    HL          ; データを読み飛ばした後のアドレスをスタックに戻す
+                              ; (これで正しく次の命令へRETできる)
+          LD      A,1         ; 1フレーム分
+          CALL    MAIN        ; メインループを実行
+          RET                 ; 呼び出し元（PUSHしたHLの指す先）へ戻る
           ;
+; 形式: 文字, 相対X座標, 相対Y座標 ... 0(終端)
 STMESG:   DEFB    'P',15,30
           DEFB    'U',30,30
           DEFB    'S',45,30
           DEFB    'H',60,30
-          DEFB    'S',90,30
+          DEFB    'S',90,30  ; 'H'と'S'の間を少し空けている(15→30)
           DEFB    'P',105,30
           DEFB    'A',120,30
           DEFB    'C',135,30
-          DEFB    'E',150,30,0
+          DEFB    'E',150,30
+          DEFB    0          ; データの終端
           ;
-MJIPAT:   LD      A,(IX+1)
-          AND     3
-          RLCA
-          RLCA
-          RLCA
-          OR      00100101B
-          LD      (IX+15),A
-          JP      MHYOUJ
+;
+; PUSH SPACE 移動ルーチン
+;
+MJIPAT:   LD      A,(IX+1)      ; ワークエリアからカウンタ（時間）を取得
+          AND     3             ; 下位2ビットのみ抽出 (0, 1, 2, 3 の繰り返し)
+          ; --- ビットを左に3回シフトして文字の拡大ビットへ移動 ---
+          RLCA                  ; (x2)
+          RLCA                  ; (x4)
+          RLCA                  ; (x8)
+          ; --- 基本属性と合成 ---
+          OR      00100101B     ; 基本の表示属性と、計算した文字拡大ビットを結合
+          LD      (IX+15),A     ; 属性/色設定をワークエリアに書き戻す
+          JP      MHYOUJ        ; 文字表示共通ルーチン(MHYOUJ)へジャンプ
           ;
-VERDISP:
-          CALL    DSET
-          DEFW    DEVVER,MHYOUJ
-          DEFB    80,0,0,0,0,80
-          DEFB    15,200,00010101B       
+;
+; タイトルデモの文字移動ルーチン
+;
+PATER1:   LD      A,(IX+1)      ; ワークエリアから経過時間（カウンタ）を取得
+          INC     (IX+1)        ; カウンタを更新
+          ;
+          ; --- フェーズ1: 登場時の急接近演出 (0?7フレーム) ---
+          CP      8             ; カウンタが8未満か？
+          JR      NC,$+12       ; 8以上なら次の処理(11バイト先)へジャンプ
+          CALL    MOVE          ; Z軸（奥から手前）へ高速移動
+          DEFB    0,0,-26       ; Z速度:-26
+          DEFB    0,-4,2        ; 加速度設定
           RET
-          
-DEVVER:   DEFB 'V',16+46,160,'E',16+62,160,'R',16+78,160
-		  DEFB	MJVER,16+126,160,MIVER,16+142,160,PTVER,0 
-;
-;---- TITLE DEMO PATERN ROUTINE ----
-;
-PATER1:   LD      A,(IX+1)
-          INC     (IX+1)
-          CP      8
-          JR      NC,$+11
-          CALL    MOVE
-          DEFB    0,0,-26
-          DEFB    0,-4,2
-          CP      30
-          JR      NC,TDPJ1
-          AND     2
-          JR      Z,$+11
-          CALL    MOVE
+          ;
+          ; --- フェーズ2: 画面の震え/バイブレーション演出 (8?29フレーム) ---
+          CP      30            ; カウンタが30未満か？
+          JR      NC,TDPJ1      ; 30以上なら回転処理(TDPJ1)へ
+          AND     2             ; ビット1をチェック（2フレームおきに真）
+          JR      Z,$+12        ; 0ならジャンプ（結果的に2フレームごとに上下移動）
+          CALL    MOVE          ; 下へ移動
           DEFB    0,4,0
           DEFB    0,0,0
-          CALL    MOVE
+          RET
+          ;
+          CALL    MOVE          ; 上へ戻る（直後の呼び出しで相殺し、震えを表現）
           DEFB    0,-4,0
           DEFB    0,0,0
-TDPJ1:    CP      66
-          JR      NC,$+20
-          CALL    RTURN
-          DEFB    128,128,128
-          DEFB    0,2,0
-          CALL    MOVE
-          DEFB    0,0,0
-          DEFB    0,2,0
-          CALL    MOVE
-          DEFB    0,0,16
-          DEFB    1,2,2
+          RET
           ;
-PATER2:   LD      A,(IX+1)
-          INC     (IX+1)
-          CP      16
-          JR      NC,$+11
-          CALL    MOVE
-          DEFB    0,0,-10
-          DEFB    2,0,0
-          JR      NZ,TDPJ2
-          SET     1,(IX+15)
-          LD      A,200
-          LD      (IX+9),A
-          LD      A,16
-TDPJ2:    CP      34
-          JR      NC,$+11
-          CALL    MOVE
-          DEFB    0,0,-8
-          DEFB    2,0,0
-          CP      70
-          JR      NC,$+11
-          CALL    MOVE
+          ; --- フェーズ3: 回転(RTURN)と複雑な移動 (30?65フレーム) ---
+TDPJ1:    CP      66            ; カウンタが66未満か？
+          JR      NC,$+21       ; 66以上ならこの演出を終了（20バイト先へ）
+          ;
+          CALL    RTURN         ; 回転ルーチン呼び出し
+          DEFB    128,128,128   ; 回転の基準座標(中心)
+          DEFB    0,2,0         ; 回転速度/軸設定          
+          CALL    MOVE          ; 座標の微調整
           DEFB    0,0,0
-          DEFB    0,-1,-1
-          CP      120
-          JR      NC,$+11
-          CALL    MOVE
-          DEFB    0,0,0
-          DEFB    0,0,-1
-          CP      190
-          JR      NC,$+11
-          CALL    MOVE
-          DEFB    0,0,0
-          DEFB    -1,0,0
-          LD      A,34
-          LD      (IX+1),A
-          JR      PATER2
+          DEFB    0,2,0
+          RET
+          ;          
+          CALL    MOVE          ; Z軸への引き（遠ざかる動作）
+          DEFB    0,0,16        ; Z速度:16
+          DEFB    1,2,2         ; 加速度/カーブ設定
+          RET
 ;
-; --- GAME SELECT ROUTINE ---
+; タイトルデモの自機オブジェクト移動ルーチン
 ;
-SELECT:   CALL    CLSPRI
-          LD      A,00001001B
-          LD      (SWHICH),A
-          LD      A,13
-          LD      (SCOLOR),A
+PATER2:   LD      A,(IX+1)      ; 経過時間（カウンタ）を取得
+          INC     (IX+1)        ; カウンタを更新
+          ;
+          ; --- フェーズ1: 回転しながらズーム（0?15フレーム） ---
+          CP      16            
+          JR      NC,$+12       ; 16以上なら次へ
+          CALL    MOVE          ; 前方に回転移動しながら登場
+          DEFB    0,0,-10       ; Z速度:-10
+          DEFB    2,0,0         
+          RET
+          ;
+          JR      NZ,TDPJ2      ; 16フレーム目に達した瞬間のみ以下の処理を実行
+          SET     1,(IX+15)     ; 属性のビット1をセット
+          LD      A,200         
+          LD      (IX+9),A      ; ワークエリア(IX+9)に初期値を投入
+          LD      A,16          ; カウンタ調整用
+          ;
+          ; --- フェーズ2: 回転しながらズームその2（16?33フレーム） ---
+TDPJ2:    CP      34            
+          JR      NC,$+12       ; 34以上なら次へ
+          CALL    MOVE          
+          DEFB    0,0,-8        ; Z速度:-8（少し減速）
+          DEFB    2,0,0         
+          RET
+          ;
+          ; --- フェーズ3: 2軸回転演出 (34?69フレーム) ---
+          CP      70            
+          JR      NC,$+12       ; 70以上なら次へ
+          CALL    MOVE          
+          DEFB    0,0,0         ; 座標移動なし
+          DEFB    0,-1,-1       ; 2軸回転
+          RET
+          ;
+          ; --- フェーズ4: 特殊移動 A (70?119フレーム) ---
+          CP      120           
+          JR      NC,$+12       ; 120以上なら次へ
+          CALL    MOVE          
+          DEFB    0,0,0         
+          DEFB    0,0,-1        
+          RET
+          ;
+          ; --- フェーズ5: 特殊移動 B (120?189フレーム) ---
+          CP      190           
+          JR      NC,$+12       ; 190以上なら次へ
+          CALL    MOVE          
+          DEFB    0,0,0         
+          DEFB    -1,0,0        
+          RET
+          ;
+          ; --- ループ処理: フェーズ2へ戻る ---
+          ; カウンタを34（フェーズ3の開始直前）に強制リセット
+          LD      A,34          
+          LD      (IX+1),A      ; カウンタを書き換え
+          JR      PATER2        ; ルーチンの先頭へ戻り、永遠にループさせる
+          ;
+;------------------------------------------------
+;
+; GAME SELECT　1996年バージョンで追加した部分
+;
+;------------------------------------------------
+;
+; SELECT: ゲームモード選択処理 (GAME か PRACTICE か)
+;
+SELECT:   CALL    CLSPRI        ; スプライト/画面のクリア
+          LD      A,00001001B   ; 画面制御用フラグ（ビット操作）
+          LD      (SWHICH),A    ; 表示切り替えスイッチを保存
+          LD      A,13          ; 文字色（カラーコード13）を設定
+          LD      (SCOLOR),A    ; カラー変数に保存
+          ;
+          ; --- 「GAME」の文字オブジェクト表示設定 ---
           CALL    DSET
-          DEFW    GAMEM,MOJIMV
-          DEFB    9,200,0,0,0,66
+          DEFW    GAMEM,MOJIMV  ; データ定義のアドレスと移動ルーチンの指定
+          DEFB    9,200,0,0,0,66 ; 初期位置やパラメータ
           DEFB    100,0,00010001B
+          ;
+          ; --- 「PRACTICE」の文字オブジェクト表示設定 ---
           CALL    DSET
           DEFW    PRACTM,MOJIMV
           DEFB    11,200,0,0,0,60
           DEFB    150,0,00010101B
+          ;
+          ; --- 選択枠（上側：GAME用）の設定 ---
           CALL    DSET
           DEFW    WALLPT,WALLMV
           DEFB    135,75,60,0,0,0
           DEFB    9,0,00001000B
+          ;
+          ; --- 選択枠（下側：PRACTICE用）の設定 ---
           CALL    DSET
           DEFW    WALLPT,WALLMV
           DEFB    135,170,60,0,0,0
           DEFB    11,0,00001001B
-          CALL    UNFADE
-          LD      A,8
-          CALL    MAIN
           ;
-          LD      C,0
+          CALL    UNFADE        ; フェードイン（画面表示開始）
+          LD      A,8           ; 初期化パラメータ
+          CALL    MAIN          ; メイン描画更新          
+          LD      C,0           ; Cレジスタを選択状態の管理に使用 (0:GAME, 1:PRACTICE)
+          ;
+; --- 選択ループ（入力待ち） ---
 LPSLCT:   LD      A,2
-          CALL    MAIN
-          CALL    STRIG
-          OR      A
-          JR      Z,JUMPSL
-          CALL    STICK
-          OR      A
-          JR      Z,LPSLCT
-          LD      A,C
-          XOR     1
-          LD      C,A
+          CALL    MAIN          ; 画面更新
+          CALL    STRIG         ; トリガーボタン（決定キー）のチェック
+          OR      A             ; Aが0でなければ（ボタン押下）
+          JR      Z,JUMPSL      ; 決定されたら JUMPSL へジャンプ
+          ;          
+          CALL    STICK         ; ジョイスティック（方向キー）のチェック
+          OR      A             ; Aが0なら入力なし
+          JR      Z,LPSLCT      ; 入力なければループ継続
+          ; --- 選択項目の切り替え処理 ---
+          LD      A,C           ; 現在の選択状態(C)を取得
+          XOR     1             ; 0と1を反転させる
+          LD      C,A           ; 反転した状態をCに戻す
+          ; 表示の明暗や座標などを入れ替えて、選択中を強調する処理
           LD      A,(PORIDAT+63)
           LD      B,A
           LD      A,(PORIDAT+47)
           LD      (PORIDAT+63),A
           LD      A,B
           LD      (PORIDAT+47),A
-          JP      LPSLCT
+          JP      LPSLCT        ; ループに戻る
           ;
-JUMPSL:   CALL    FADE
+; --- 決定後の遷移処理 ---
+JUMPSL:   CALL    FADE          ; フェードアウト
           LD      A,10
-          CALL    ITEMGT
+          CALL    ITEMGT        ; セレクトサウンドコール
           CALL    MAIN
+          ;          
           LD      HL,0
-          LD      (SCORE),HL
-          LD      A,9
-          LD      (STOCK),A
-          LD      A,C
-          OR      A
-          JP      NZ,PRATCE
+          LD      (SCORE),HL    ; スコアを0にリセット
+          LD      A,DSTOCK
+          LD      (STOCK),A     ; 残機（ストック）をセット
           ;
-GAME:     LD      HL,GMOUT
-          LD      (JPDEAD),HL
-          CALL    STAGE1
+          LD      A,C           ; 選択していたモード(C)を確認
+          OR      A             ; 0（GAME）か 1（PRACTICE）か
+          JP      NZ,PRATCE     ; 1ならプラクティスモードへ
+          ;
+; --- 本編ゲーム開始 ---
+GAME:     LD      HL,GMOUT      ; ゲームオーバー時の戻り先を設定
+          LD      (JPDEAD),HL   ; ゲームオーバー時ジャンプ先アドレス保存
+          CALL    STAGE1        ; 各ステージを順次呼び出し
           CALL    STAGE2
           CALL    STAGE3
           CALL    STAGE4
-          CALL    ENDING
-          CALL    WSCORE
-          JP      TITLE
+          CALL    ENDING        ; エンディング処理
+          CALL    WSCORE        ; スコア保存/表示
+          JP      TITLE         ; タイトルへ戻る
           ;
-GMOUT:    CALL    GMOVER
-          CALL    WSCORE
-          JP      TITLE
-          ;
-JPDEAD    DEFW    0
+; --- ゲームオーバー処理 ---
+GMOUT:    CALL    GMOVER        ; ゲームオーバー演出
+          CALL    WSCORE        ; スコア保存
+          JP      TITLE         ; タイトルへ戻る
+
+;
+; データ定義セクション
+;
+JPDEAD    DEFW    0             ; 死亡時のジャンプ先ポインタ
+
+; 表示用テキストデータ（文字, X相対座標, 0）
 GAMEM:    DEFB    'G',20,0,'A',50,0,'M',80,0,'E',110,0,0
 PRACTM:   DEFB    'P',20,0,'R',35,0,'A',50,0,'C',65,0,'T',80,0
           DEFB    'I',95,0,'C',110,0,'E',125,0,0
-          ;
-WALLPT:   DEFB    8,0
-          DEFB    -120,  30, 5
+
+; 選択枠の頂点データ（ワイヤーフレームの座標定義）
+WALLPT:   DEFB    8,0           ; 頂点数
+          DEFB    -120,  30, 5  ; 頂点データ
           DEFB    -120, -30, 5
           DEFB     120, -30, 5
           DEFB     120,  30, 5
@@ -3133,194 +3242,249 @@ WALLPT:   DEFB    8,0
           DEFB    -120, -30,-5
           DEFB     120, -30,-5
           DEFB     120,  30,-5
-          DEFB    1,2,3,4,1,0
+          DEFB    1,2,3,4,1,0   ; 面の繋がり情報
           DEFB    5,6,7,8,5,0,0
-          ;
-WALLMV:   CALL    MOVE
+
+; 移動制御
+WALLMV:   CALL    MOVE          ; 移動サブルーチン呼び出し
           DEFB    0,0,0,0,1,0
+          RET
+
+; 文字の動き制御
+MOJIMV:   INC     (IX+1)        ; インデックスレジスタを使って文字を動かす
+          JP      MHYOUJ        ; 文字表示サブルーチンへジャンプ
           ;
-MOJIMV:   INC     (IX+1)
-          JP      MHYOUJ
+;------------------------------------------------
 ;
-; --- PRACTICE ROUTINE ---
+; PRACTICE SELECT 1996年バージョンで追加した部分
 ;
-PRATCE:   CALL    CLSPRI
-          LD      A,00001001B
-          LD      (SWHICH),A
-          LD      A,1
-          LD      (SCOLOR+1),A
-          CALL    DSET
-          DEFW    PRATM,PRAMJV
-          DEFB    9,200,0,0,0,76
+;------------------------------------------------
+
+PRATCE:   CALL    CLSPRI        ; スプライトと画面表示を初期化（クリア）
+          LD      A,00001001B   ; 画面表示モードの設定フラグ
+          LD      (SWHICH),A    ; 表示切り替えフラグを保存
+          LD      A,1           ; 地平線の速度を設定
+          LD      (SCOLOR+1),A  ; 地平線の速度をセット
+          ;
+          ; --- 「ZONE」ロゴ表示の設定 ---
+          CALL    DSET          ; 表示オブジェクト登録
+          DEFW    PRATM,PRAMJV  ; 文字データ 'ZONE' とその移動処理アドレス
+          DEFB    9,200,0,0,0,76 
           DEFB    100,0,00010001B
+          ;
+          ; --- 選択肢 M1 (ZONE 1) の設定 ---
           CALL    DSET
-          DEFW    M1,SJIMV
+          DEFW    M1,SJIMV      ; '1' のデータと数字用移動処理
           DEFB    0,0,0,0,0,0
           DEFB    10,0,00001010B
+          ;
+          ; --- 選択肢 M4 (ZONE 4) の設定 ---
           CALL    DSET
-          DEFW    M4,SJIMV
+          DEFW    M4,SJIMV      ; '4' のデータ
           DEFB    0,0,0,0,0,0
           DEFB    8,8,00001010B
+          ;
+          ; --- 選択肢 M3 (ZONE 3) の設定 ---
           CALL    DSET
-          DEFW    M3,SJIMV
+          DEFW    M3,SJIMV      ; '3' のデータ
           DEFB    0,0,0,0,0,0
           DEFB    5,16,00001010B
+          ;
+          ; --- 選択肢 M2 (ZONE 2) の設定 ---
           CALL    DSET
-          DEFW    M2,SJIMV
+          DEFW    M2,SJIMV      ; '2' のデータ
           DEFB    0,0,0,0,0,0
           DEFB    3,24,00001010B
-          CALL    UNFADE
-          LD      C,0
-PRLOOP:   LD      A,1
-          CALL    MAIN
-          CALL    STRIG
-          JP      Z,JPPRCT
-          CALL    STICK
-          CP      3
-          JR      NZ,PRJP2
-          LD      B,8
-PRJP1:    INC     C
-          LD      A,1
-          CALL    MAIN
-          DJNZ    PRJP1
-          JR      PRLOOP
-PRJP2:    CP      7
-          JR      NZ,PRLOOP
-          LD      B,8
-PRJP3:    DEC     C
-          LD      A,1
-          CALL    MAIN
-          DJNZ    PRJP3
-          JP      PRLOOP
           ;
-JPPRCT:   LD      B,10
-          CALL    FADE
-		  CALL    ITEMGT
-JPPRJ1:   LD      A,1
+          CALL    UNFADE        ; 画面をフェードイン
+          LD      C,0           ; Cレジスタ：現在の回転角度/選択位置（0-31）
+          ;
+; --- メイン・入力監視ループ ---
+PRLOOP:   LD      A,1           ; メインルーチンの処理モード1
+          CALL    MAIN          ; 1フレーム描画とシステム更新
+          CALL    STRIG         ; トリガ（決定ボタン）の状態取得
+          JP      Z,JPPRCT      ; ボタンが押されたら(Z=0)ステージ開始へ
+          ; --- 右入力判定 ---
+          CALL    STICK         ; ジョイスティック（方向）の状態取得
+          CP      3             ; 「右」が押されているか？
+          JR      NZ,PRJP2      ; 右でなければ左の判定(PRJP2)へ
+          ;
+          ; --- 右入力：時計回りに8ステップ分回転させる ---
+          LD      B,8           ; 8フレーム分回すカウンタ
+PRJP1:    INC     C             ; 角度(C)をインクリメント
+          LD      A,1           ; 描画更新
           CALL    MAIN
-          DJNZ    JPPRJ1
-          LD      HL,PRART
-          LD      (JPDEAD),HL
-          LD      A,9
+          DJNZ    PRJP1         ; Bが0になるまで繰り返し（滑らかな動き）
+          JR      PRLOOP        ; ループに戻る
+          ;
+		  ; --- 左入力判定 ---
+PRJP2:    CP      7             ; 「左」が押されているか？
+          JR      NZ,PRLOOP     ; 何も押されていなければループの先頭へ
+          
+          ; --- 左入力：反時計回りに8ステップ分回転させる ---
+          LD      B,8           ; 8フレーム分回すカウンタ
+PRJP3:    DEC     C             ; 角度(C)をデクリメント
+          LD      A,1           ; 描画更新
+          CALL    MAIN
+          DJNZ    PRJP3         ; Bが0になるまで繰り返し
+          JP      PRLOOP        ; ループに戻る
+; --- ステージ確定後の遷移 ---
+JPPRCT:   LD      B,10          ; 待ち時間（10フレーム）
+          CALL    FADE          ; 画面暗転開始
+          CALL    ITEMGT        ; セレクトサウンドコール
+JPPRJ1:   LD      A,1           ; 描画更新しながら待機
+          CALL    MAIN
+          DJNZ    JPPRJ1        
+          ;
+          LD      HL,PRART      ; 練習モード用ゲームオーバー時のジャンプ先を設定
+          LD      (JPDEAD),HL   ; ポインタを保存
+          LD      A,DSTOCK      ; 残機(STOCK)を設定
           LD      (STOCK),A
-          LD      HL,0
+          LD      HL,0          ; スコアを0にクリア
           LD      (SCORE),HL
-          LD      A,C
-          SRL     A
-          SRL     A
-          SRL     A
-          AND     3
-          JR      NZ,JPCT1
-          CALL    STAGE1
-          JP      PRATCE
-JPCT1:    CP      1
-          JR      NZ,JPCT2
-          CALL    STAGE2
-          JP      PRATCE
-JPCT2:    CP      2
-          JR      NZ,JPCT3
-          CALL    STAGE3
-          JP      PRATCE
-JPCT3:    CALL    STAGE4
-          CALL    ENDING
-          JP      TITLE
           ;
-PRART:	  POP	  HL
-		  JP	  TITLE
-		  ;
-SJIMV:    LD      (IX+7),128
-          LD      (IX+8),160
-          LD      (IX+9),10
-          LD      A,C
-          ADD     A,(IX+14)
-          AND     31
-          LD      (TDSJI1+2),A
-          LD      (IX+12),A
-          CALL    RTURN
-          DEFB    128,100,128
-TDSJI1:   DEFB    0,0,0
-          CALL    MOVE
+          ; --- 選択位置(C)からステージ番号を算出 ---
+          LD      A,C           ; Cは0-31の値
+          SRL     A             ; A = A / 2
+          SRL     A             ; A = A / 4
+          SRL     A             ; A = A / 8 (結果は0-3)
+          AND     3             ; 念のため下位2ビットでマスク
+          ;          
+          JR      NZ,JPCT1      ; 0以外ならZONE2以降の判定へ
+          CALL    STAGE1        ; --- ZONE 1 実行 ---
+          JP      PRATCE        ; 終了後、ステージ選択に戻る
+          ;
+JPCT1:    CP      1             ; ZONE 2 か？
+          JR      NZ,JPCT2
+          CALL    STAGE2        ; --- ZONE 2 実行 ---
+          JP      PRATCE
+          ;
+JPCT2:    CP      2             ; ZONE 3 か？
+          JR      NZ,JPCT3
+          CALL    STAGE3        ; --- ZONE 3 実行 ---
+          JP      PRATCE
+          ;
+JPCT3:    CALL    STAGE4        ; --- ZONE 4 実行 ---
+          CALL    ENDING        ; エンディングへ
+          JP      TITLE         ; タイトルへ戻る
+          ;
+; --- 練習モードゲームオーバー時にここへ飛ぶ ---
+PRART:    POP     HL            ; コールスタックを1つ破棄（調整）
+          JP      TITLE         ; タイトル画面へ強制送還
+;
+; サポートルーチンとデータ定義
+;
+; SJIMV: ステージ番号（M1-M4）の移動処理
+SJIMV:    LD      (IX+7),128    ; 基準X座標設定
+          LD      (IX+8),160    ; 基準Y座標設定
+          LD      (IX+9),10     ; 基準Z座標設定
+          LD      A,C           ; 共通角度Cを取得
+          ADD     A,(IX+14)     ; 各数字ごとの位相オフセット(0, 8, 16, 24)を加算
+          AND     31            ; 0-31の範囲に固定
+          LD      (TDSJI1+2),A  ; RTURN用のパラメータ書き換え
+          LD      (IX+12),A     ; 自身の角度変数に保存
+          CALL    RTURN         ; 相対回転計算
+          DEFB    128,100,128   ; 相対回転のパラメータ
+TDSJI1:   DEFB    0,0,0         ; ワークエリア（実行時に書き換えられる）
+          CALL    MOVE          ; 文字の回転
           DEFB    0,0,0
           DEFB    1,0,0
-          ;
+          RET
+
+; PRATM: タイトル文字 'ZONE' の定義
 PRATM:    DEFB    'Z',20,0,'O',40,5,'N',60,2,'E',85,0,0
-          ;
-PRAMJV:   INC     (IX+1)
-          LD      A,C
+
+; PRAMJV: 'ZONE'ロゴの移動処理
+PRAMJV:   INC     (IX+1)        ; 移動カウンタを更新
+          LD      A,C           ; 現在の選択角度Cを元に
           AND     31
+          SRL     A             ; 3回右シフトして 0-3 のインデックス作成
           SRL     A
           SRL     A
-          SRL     A
-          LD      H,0
+          LD      H,0           ; HL = 色テーブルへのインデックス
           LD      L,A
           LD      DE,TBLCOR
-          ADD     HL,DE
-          LD      A,(HL)
-          LD      (SCOLOR),A
-          LD      (IX+7),A
-          JP      MHYOUJ
+          ADD     HL,DE         ; テーブルのアドレスを算出
+          LD      A,(HL)        ; テーブルからカラーコードを読み出す
+          LD      (SCOLOR),A    ; 地平線の色をセット
+          LD      (IX+7),A      ; 自身の色も更新
+          JP      MHYOUJ        ; 文字表示ルーチンへ
 
-TBLCOR:   DEFB    11,2,4,6
+; TBLCOR: 選択ゾーンに対応したカラーテーブル
+TBLCOR:   DEFB    11,2,4,6      ; 水色、赤、青、緑（などのパレット番号）
 ;--------------------------------------------------
 ;
 ; ENDING DEMO
 ;
 ;--------------------------------------------------
-;
-; GAME CLEAR
-;
-ENDING:   CALL    CLSPRI
+
+ENDING:   CALL    CLSPRI        ; 画面とスプライトをクリア
           LD      A,8
-          CALL    MAIN
+          CALL    MAIN          ; 8フレームMAINを実行
           LD      A,00001001B
-          LD      (SWHICH),A
-          LD      HL,0203H
-          LD      (SCOLOR),HL
+          LD      (SWHICH),A    ; 表示フラグ設定
+          LD      HL,0203H      ; 地平線の色と速度
+          LD      (SCOLOR),HL   ; 地平線一括設定
           LD      HL,0
-          LD      (GAGE),HL
-          ;
+          LD      (GAGE),HL     ; ゲージ表示などをリセット
+          ;          
+          ; --- 自機オブジェクト作成 ---
           CALL    DSET
           DEFW    MSDATA,EMSPT1
           DEFB    128,160,16,0,1,0
           DEFB    3,0,00001000B
-          CALL    UNFADE
+          CALL    UNFADE        ; フェードインして表示開始
           LD      A,24
-          CALL    MAIN
+          CALL    MAIN          ; 24フレームMAINを実行
+          ;
+          ; --- "PRODUCED BY" の表示 ---
           CALL    DSET
-          DEFW    PRODUM,MHYOUJ
+          DEFW    PRODUM,MHYOUJ ; MHYOUJは標準的な文字表示ルーチン
           DEFB    2,34,0,0,0,75
           DEFB    80,0,00000101B
           LD      A,36
-          CALL    MAIN
+          CALL    MAIN          ; 36フレームMAIN実行（文字を読ませる間隔）
+          ;
+          ; --- 作者名"MSX2 ROCK CITY"の表示 ---
           CALL    DSET
           DEFW    MSX2ROC,MHYOUJ
           DEFB    2,34,0,0,0,73
           DEFB    80,0,00000101B
           LD      A,36
           CALL    MAIN
+          ;
+          ; --- ゲームタイトル"ROCK CITY"の表示 ---
           CALL    DSET
           DEFW    ROCKM ,MHYOUJ
           DEFB    2,34,0,0,0,73
           DEFB    80,0,00000101B
           LD      A,36
           CALL    MAIN
+          ;
+          ; --- "THE END" の表示 ---
           CALL    DSET
           DEFW    THEENM,MHYOUJ
           DEFB    2,34,0,0,0,82
           DEFB    80,0,00000101B
           LD      A,36
           CALL    MAIN
+          ;
+          ; --- 自機の振り向き演出処理 ---
           XOR     A
-          LD      (PORIDAT+1),A
-          LD      HL,EMSPT2
-          LD      (PORIDAT+5),HL
+          LD      (PORIDAT+1),A ; ワークエリアのカウンタをリセット
+          LD      HL,EMSPT2     ; 移動ルーチンを EMSPT1 から EMSPT2 へ変更
+          LD      (PORIDAT+5),HL; オブジェクトの挙動を動的に書き換え
+          ;          
           LD      A,32
-          CALL    MAIN
-          CALL    FADE
+          CALL    MAIN          ; 32フレーム新しい動き(EMSPT2)を見せる
+          CALL    FADE          ; 一旦フェードアウト
+          ;
           LD      A,16
           CALL    MAIN
-          LD      A,00001000B
+          LD      A,00001000B   ; 表示設定を変更
           LD      (SWHICH),A
+          ;
+          ; --- 最後の一言 "MSX" "FOREVER" ---
           CALL    DSET
           DEFW    MSXM,MHYOUJ
           DEFB    15,230,0,0,0,98
@@ -3329,134 +3493,178 @@ ENDING:   CALL    CLSPRI
           DEFW    FOREVM,MHYOUJ
           DEFB    15,230,0,0,0,83
           DEFB    150,0,00010101B
-          CALL    UNFADE
-          LD      A,150
+          ;
+          CALL    UNFADE        ; 再度フェードイン
+          LD      A,150         ; 長めの余韻（150フレーム ＝ 約2.5秒）
           CALL    MAIN
-          CALL    FADE
+          CALL    FADE          ; 最後のフェードアウト
           LD      A,8
           CALL    MAIN
-          RET
-          ;
-EMSPT1:   LD      A,(IX+1)
+          RET                   ; 呼び出し元（GAMEループ）へ戻る
+
+; --- EMSPT1: 自機が左右移動する移動ルーチン ---
+EMSPT1:   LD      A,(IX+1)      ; 経過フレーム数を確認
           INC     (IX+1)
           CP      6
-          JR      NC,$+11
+          JR      NC,$+12       ; 6フレーム未満なら移動
           CALL    MOVE
-          DEFB    -16,0,0,1,0,0
+          DEFB    -16,0,0,1,0,0 ; 左方向へ
+          RET
+          ;
           CP      18
-          JR      NC,$+11
+          JR      NC,$+12       ; 18フレーム未満なら移動
           CALL    MOVE
-          DEFB    16,0,0,-1,0,0
+          DEFB    16,0,0,-1,0,0 ; 右方向へ
+          RET
+          ;
           CP      24
-          JR      NC,$+11
+          JR      NC,$+12       ; 24フレーム未満なら移動
           CALL    MOVE
-          DEFB    -16,0,0,1,0,0
-          XOR     A
+          DEFB    -16,0,0,1,0,0 ; 再度左へ
+          RET
+          ;
+          XOR     A             ; カウンタが24に達したらリセットしてループ
           LD      (IX+1),A
           JR      EMSPT1
-          ;
+
+; --- EMSPT2: 自機が振り返って去っていく移動制御 ---
 EMSPT2:   LD      A,(IX+1)
           INC     (IX+1)
           CP      12
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
-          DEFB    -5,-2,16,0,0,0
-          CP      16
-          JR      NC,$+11
-          CALL    MOVE
-          DEFB    0,0,0,0,-1,-3
-          CALL    MOVE
-          DEFB    8,-6,-24,0,0,0
+          DEFB    -5,-2,16,0,0,0 ; 斜め前方へ
+          RET
           ;
-PRODUM:   DEFB   'P',0,0,'R',15,0,'O',30,0,'D',45,0,'U',60,0,'C',75,0
-          DEFB   'E',90,0,'D',105,0,'B',45,50,'Y',60,50,0
-MSX2ROC:  DEFB   'M',-30,0,'S',-15,3,'X',0,6,'2',15,9,'R',30,12,'O',45,15
-          DEFB   'C',60,18,'K',75,21,'C',90,24,'I',105,27,'T',120,30,'Y',135,33,0
-ROCKM:    DEFB   'R',0,0,'O',15,0,'C',30,0,'K',45,0,'C',65,0,'I',80,0
-          DEFB   'T',95,0,'Y',110,0,0
-THEENM:   DEFB   'T',0,0,'H',15,0,'E',30,0,'E',55,0,'N',70,0,'D',85,0,0
-MSXM:     DEFB   'M',0,0,'S',30,0,'X',60,0,0
-FOREVM:   DEFB   'F',0,0,'O',15,0,'R',30,0,'E',45,0,'V',60,0,'E',75,0
-          DEFB   'R',90,0,0
+          CP      16
+          JR      NC,$+12
+          CALL    MOVE
+          DEFB    0,0,0,0,-1,-3 ; 振り返り処理
+          RET
+          ;
+          CALL    MOVE          ; 斜め後方へ移動
+          DEFB    8,-6,-24,0,0,0
+          RET
+
 ;
-; SCORE ROUTINE
+; テキストデータ定義（文字, X, Y）
+; 
+PRODUM:   DEFB    'P',0,0,'R',15,0,'O',30,0,'D',45,0,'U',60,0,'C',75,0
+          DEFB    'E',90,0,'D',105,0,'B',45,50,'Y',60,50,0
+MSX2ROC:  DEFB    'M',-30,0,'S',-15,3,'X',0,6,'2',15,9,'R',30,12,'O',45,15
+          DEFB    'C',60,18,'K',75,21,'C',90,24,'I',105,27,'T',120,30,'Y',135,33,0
+ROCKM:    DEFB    'R',0,0,'O',15,0,'C',30,0,'K',45,0,'C',65,0,'I',80,0
+          DEFB    'T',95,0,'Y',110,0,0
+THEENM:   DEFB    'T',0,0,'H',15,0,'E',30,0,'E',55,0,'N',70,0,'D',85,0,0
+MSXM:     DEFB    'M',0,0,'S',30,0,'X',60,0,0
+FOREVM:   DEFB    'F',0,0,'O',15,0,'R',30,0,'E',45,0,'V',60,0,'E',75,0
+          DEFB    'R',90,0,0
+;------------------------------------------
 ;
-WSCORE:   CALL    CLSPRI
-          LD      HL,(SCORE)
-          LD      IX,NSCORM
-          CALL    CHTEN
-          CALL    DSET
-          DEFW    NSCORM,MHYOUJ
-          DEFB    15,80,0,0,0,140
+; SCORE DEMO
+;
+;------------------------------------------
+WSCORE:   CALL    CLSPRI          ; スプライトの消去
+          LD      HL,(SCORE)      ; 現在のスコアをロード
+          LD      IX,NSCORM       ; スコアの先頭アドレスをセット
+          CALL    CHTEN           ; 数値を10進数テキスト（IXのアドレスに）に変換
+          CALL    DSET            ; スコア表示オブジェクト生成
+          DEFW    NSCORM,MHYOUJ   ; 表示データのアドレスと表示ルーチン
+          DEFB    15,80,0,0,0,140 ; 座標や色などのパラメータ（スコア用）
           DEFB    140,0,00010001B
-          LD      HL,(HSCORE)
-          LD      DE,(SCORE)
-          OR      A
-          SBC     HL,DE
-          PUSH    AF
-          ADD     HL,DE
-          POP     AF
-          LD      C,15
-          JR      NC,$+4
-          EX      DE,HL
-          LD      C,8
-          LD      A,C
-          LD      (HSCORD+4),A
-          LD      (HSCORE),HL
-          LD      IX,HSCORM
-          CALL    CHTEN
-          CALL    DSET
-HSCORD:   DEFW    HSCORM,MHYOUJ
-          DEFB    15,80,0,0,0,140
+
+          ; --- ハイスコア判定処理 ---
+          LD      HL,(HSCORE)     ; 現在のハイスコアをロード
+          LD      DE,(SCORE)      ; 今回のスコアをロード
+          OR      A               ; キャリーフラグをクリア
+          SBC     HL,DE           ; HSCORE - SCORE を計算
+          PUSH    AF              ; 計算結果（フラグ）を保存
+          ADD     HL,DE           ; HLを元のHSCOREに戻す
+          POP     AF              ; フラグを復帰
+          LD      C,15            ; 通常時の色（または属性）をセット
+          JR      NC,$+4          ; HSCORE >= SCORE ならジャンプ（更新なし）
+          ;
+          ; --- ハイスコア更新時の処理 ---
+          EX      DE,HL           ; 更新されたので SCORE(DE) を HL に入れる
+          LD      C,8             ; 更新時の色（または属性）に変更
+          LD      A,C             
+          LD      (HSCORD+4),A    ; 表示命令(HSCORD)のパラメータを自己書き換え
+          LD      (HSCORE),HL     ; 新しいハイスコアを保存
+          ;          
+          LD      IX,HSCORM       ; ハイスコア表示用バッファをセット
+          CALL    CHTEN           ; 数値を10進数に変換（IXで始まるアドレスにセット）
+          CALL    DSET            ; ハイスコア表示オブジェクト生成
+HSCORD:   DEFW    HSCORM,MHYOUJ   
+          DEFB    15,80,0,0,0,140 ; ※+4バイト目が先ほどのLD (HSCORD+4),Aで書き換わる
           DEFB    100,0,00010001B
+          ;
+          ; --- ラベル表示（"HI-SCORE" / "SCORE" 文字列） ---
           CALL    DSET
-          DEFW    HSCOR2,MHYOUJ
+          DEFW    HSCOR2,MHYOUJ   ; "HI-SCORE" 文字列の表示オブジェクト生成
           DEFB    14,80,0,0,0,20
           DEFB    100,0,00010101B
+          ;          
           CALL    DSET
-          DEFW    SCORE2,MHYOUJ
+          DEFW    SCORE2,MHYOUJ   ; "SCORE" 文字列の表示オブジェクト生成
           DEFB    14,80,0,0,0,20
           DEFB    140,0,00010101B
-          CALL    UNFADE
-          LD      A,00001000B
-          LD      (SWHICH),A
-          CALL    UNFADE
-          LD      A,50
-          CALL    MAIN
-          CALL    FADE
-          LD      A,8
-          CALL    MAIN
-          JP      TITLE
           ;
+          ; --- 演出・画面遷移 ---
+          CALL    UNFADE          ; フェードイン（表示開始）
+          LD      A,00001000B     ; スイッチ切り替え用ビット
+          LD      (SWHICH),A
+          CALL    UNFADE          ; 再度フェード（または画面更新）
+          ;          
+          LD      A,50            ;
+          CALL    MAIN            ; MAINを50フレーム実行（表示維持）
+          
+          CALL    FADE            ; フェードアウト
+          LD      A,8             ; フェードの間MAINを8フレーム実行して待ち
+          CALL    MAIN
+          JP      TITLE           ; タイトル画面へ戻る
+
+; --- データ定義エリア ---
+; 数値テキスト変換用のバッファ（'0'と座標オフセットの並び）
 NSCORM:   DEFB    '0',0,0,'0',20,0,'0',40,0,'0',60,0,'0',80,0,0
 HSCORM:   DEFB    '0',0,0,'0',20,0,'0',40,0,'0',60,0,'0',80,0,0
+
+; 固定文字列データ（文字, Xオフセット, Yオフセット）
 HSCOR2:   DEFB    'H',0,0,'I',12,0,'S',30,0,'C',45,0,'O',60,0
           DEFB    'R',75,0,'E',90,0,0
 SCORE2:   DEFB    'S',0,0,'C',15,0,'O',30,0,'R',45,0,'E',60,0,0
 ;
-; GAME OVER
+;------------------------------------------------
 ;
-GMOVER:   CALL    CLSPRI
-          LD      A,14
-          CALL    MAIN
-          CALL    DSET
-          DEFW    GMOVEM,MHYOUJ
-          DEFB    8,40,0,0,0,80
-          DEFB    90,0,00000001B
-          CALL    UNFADE
-          LD      A,00001000B
-          LD      (SWHICH),A
-          LD      A,32
-          CALL    MAIN
-          CALL    FADE
-          LD      A,20
-          CALL    MAIN
-          JP      WSCORE
+; GAME OVER DEMO
+;
+;------------------------------------------------
+GMOVER:   CALL    CLSPRI          ; スプライトの消去
+          LD      A,14            ; 
+          CALL    MAIN            ; 14フレームMAINを実行(待ち）
+          CALL    DSET            ; GAMEOVER文字列表示オブジェクト生成
+          DEFW    GMOVEM,MHYOUJ   ; 表示データ(GMOVEM)と表示ルーチンを指定
+          DEFB    8,40,0,0,0,80   ; パラメータ（色、X座標初期値、オフセット等）
+          DEFB    90,0,00000001B  ; 表示制御フラグ
           ;
-GMOVEM:   DEFB    'G',0,0,'A',30,0,'M',60,0,'E',90,0
-          DEFB    'O',0,80,'V',30,80,'E',60,80,'R',90,80,0
-         
+          CALL    UNFADE          ; 暗転状態からじわっと表示（フェードイン）
+          LD      A,00001000B     
+          LD      (SWHICH),A                
+          LD      A,32            ; 32フレームMAINを実行
+          CALL    MAIN            ; "GAME OVER" を読ませるためのウェイト
+          ;          
+          CALL    FADE            ; 次のスコア画面へ向けてフェードアウト
+          LD      A,20            ; 20フレームMAINを実行
+          CALL    MAIN            
+          ;
+          JP      WSCORE          ; スコア表示（WSCORE）へジャンプ
 
+; --- "GAME OVER" 文字列データ定義 ---
+; 形式: '文字', Xオフセット, Yオフセット
+GMOVEM:   ; 1行目: "GAME"
+          DEFB    'G',0,0,  'A',30,0, 'M',60,0, 'E',90,0
+          ; 2行目: "OVER" (Y座標を80ドット下げて表示)
+          DEFB    'O',0,80, 'V',30,80,'E',60,80,'R',90,80, 0
+          
 ;-----------------------------------------------------------
 ;
 ; STAGE 1
@@ -3592,6 +3800,7 @@ S1CHARD1: DEFW    S1CHAPT1,S1CHAMV1
           ;
 S1CHAMV1: CALL    MOVE
           DEFB    0,0,-32,0,0,-2
+          RET
           ;
 S1CHAPT1: DEFB    4,0
           DEFB    -32, 18, 18
@@ -3635,6 +3844,7 @@ S1CHAPT2: DEFB    11,3
           ;
 S1CHAMV2: CALL    MOVE
           DEFB    0,0,-16,2,0,0
+          RET
 ;
 ; STAGE 1 -- CHARACTER 3
 ;
@@ -3678,29 +3888,41 @@ S1BOSMV1: LD      A,(PORIDAT)
           LD      A,(IX+1)
           INC     (IX+1)
           CP      16
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,-8,2,0,0
+          RET
+          ;
           CP      32
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    -4,0,0,0,0,0
+          RET
+          ;
           CP      64
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    4,0,0,0,2,0
+          RET
+          ;
           CP      80
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,-4,0,0,0
+          RET
+          ;
           CP      112
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    -4,0,0,0,-2,0
+          RET
+          ;
           CP      144
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    2,0,6,1,-2,0
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S1BOSMV1
@@ -3714,29 +3936,41 @@ S1BOSMV2: LD      A,(PORIDAT)
           LD      A,(IX+1)
           INC     (IX+1)
           CP      16
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,-8,0,0,2
+          RET
+          ;
           CP      32
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    -4,0,0,0,0,3
+          RET
+          ;
           CP      64
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    4,0,0,0,0,0
+          RET
+          ;
           CP      80
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,-4,0,0,-3
+          RET
+          ;
           CP      112
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    -4,0,0,0,0,1
+          RET
+          ;
           CP      144
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    2,0,6,-1,0,2
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S1BOSMV2
@@ -4052,11 +4286,13 @@ S2CHARP1: CALL    S2HABATA
           LD      (IX+9),A
           RET
           CP      40
-          JR      NC,$+20
+          JR      NC,$+21
           CALL    RTURN
           DEFB    128,128,128,0,2,0
           CALL    MOVE
           DEFB    -2,0,0,0,2,0
+          RET
+          ;
           LD      A,(IX+9)
           SUB     16
           LD      (IX+9),A
@@ -4121,19 +4357,26 @@ S2CHARP2: LD      A,(IX+13)
           LD      A,(IX+1)
           INC    (IX+1)
           CP      8
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,-24,2,0,0
+          RET
+          ;
           CP      40
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,0,1,-2,-1
+          RET
+          ;
           CP      72
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,0,2,1,2
+          RET
+          ;
           CALL    MOVE
           DEFB    0,0,-8,2,0,0
+          RET
 ;
 ; STAGE 2 -- CHARACTER 3
 ;
@@ -4337,21 +4580,29 @@ S2CHARD5: DEFW    S2CHPD11,S2CHARP5
           ;
 S2CHARP5: CALL    S2HABATA
           CP      4
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,-22,-8,0,2,0
+          RET
+          ;
           CP      8
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,-22,-8,0,-2,0
+          RET
+          ;
           CP      12
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,22,-8,0,-2,0
+          RET
+          ;
           CP      16
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,22,-8,0,2,0
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S2CHARP5
@@ -4363,6 +4614,7 @@ S2CHARP4: CALL    S2HABATA
           DEFB    128,128,128,2,0,0
           CALL    MOVE
           DEFB    0,0,-8,2,0,0
+          RET
           ;
 S2CHARA4: CALL    RND
           AND     127
@@ -4424,21 +4676,29 @@ S2BOSMV:  LD      A,(PORIDAT)
           CALL    Z,S2FUN
           CALL    S2HABATA
           CP      4
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,-18,0,0,-2
+          RET
+          ;
           CP      12
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    -18,0,0,0,0,-1
+          RET
+          ;
           CP      16
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,18,0,0,-2
+          RET
+          ;
           CP      24
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    18,0,0,0,0,-1
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S2BOSMV
@@ -4446,13 +4706,17 @@ S2BOSMV:  LD      A,(PORIDAT)
 S2BOSMV2: LD      A,(IX+1)
           INC     (IX+1)
           CP      16
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,8,0,0,0,1
+          RET
+          ;
           CP      32
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,-8,0,0,0,1
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S2BOSMV2
@@ -4778,13 +5042,17 @@ S3CHAPD2: DEFB    10,2
 S3CHARP2: LD      A,(IX+1)
           INC     (IX+1)
           CP      3
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    -16,0,-10,0,0,0
+          RET
+          ;
           CP      6
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    16,0,-10,0,0,0
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S3CHARP2
@@ -4792,13 +5060,17 @@ S3CHARP2: LD      A,(IX+1)
 S3CHRP22: LD      A,(IX+1)
           INC     (IX+1)
           CP      3
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    16,0,-10,0,0,0
+          RET
+          ;
           CP      6
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    -16,0,-10,0,0,0
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S3CHRP22
@@ -4983,6 +5255,7 @@ S3RP5END: LD      A,(IX+13)
           LD      (IX+13),A
           CALL    MOVE
           DEFB    0,0,-8,3,0,0
+          RET
 ;
 ; STAGE 3 -- CHARACTER 4
 ;
@@ -4999,12 +5272,14 @@ S3CHARP4: LD      A,(IX+13)
           LD      (IX+13),A
           CALL    MOVE
           DEFB    0,0,-32,2,0,3
+          RET
           ;
 S3CHRP42: LD      A,(IX+13)
           XOR     2
           LD      (IX+13),A
           CALL    MOVE
           DEFB    0,0,-32,0,-3,0
+          RET
           ;
 S3CHARA4: CALL    RND
           LD      (S3CHARD4+4),A
@@ -5402,14 +5677,17 @@ S4CHAPD2: DEFB    4,0
 S4CHRP21: CALL    S4CHARP2
           CALL    MOVE
           DEFB    4,0,2,0,0,0
+          RET
           ;
 S4CHRP22: CALL    S4CHARP2
           CALL    MOVE
           DEFB    -4,0,2,0,0,0
+          RET
           ;
 S4CHRP23: CALL    S4CHARP2
           CALL    MOVE
           DEFB    0,0,-6,0,0,0
+          RET
           ;
 S4CHARP2: LD      A,(IX+1)
           INC     (IX+1)
@@ -5662,34 +5940,42 @@ S4CHARP4: LD      A,(IX+13)
 S4CHRP41: CALL    S4CHARP4
           CALL    MOVE
           DEFB    18,2,-8,0,0,0
+          RET
           ;
 S4CHRP42: CALL    S4CHARP4
           CALL    MOVE
           DEFB    -10,3,-15,0,0,0
+          RET
           ;
 S4CHRP43: CALL    S4CHARP4
           CALL    MOVE
           DEFB    11,-12,-8,0,0,0
+          RET
           ;
 S4CHRP44: CALL    S4CHARP4
           CALL    MOVE
           DEFB    12,21,-8,0,0,0
+          RET
           ;
 S4CHRP45: CALL    S4CHARP4
           CALL    MOVE
           DEFB    -8,13,-12,0,0,0
+          RET
           ;
 S4CHRP46: CALL    S4CHARP4
           CALL    MOVE
           DEFB    -18,-12,1,0,0,0
+          RET
           ;
 S4CHRP47: CALL    S4CHARP4
           CALL    MOVE
           DEFB    6,-18,-7,0,0,0
+          RET
           ;
 S4CHRP48: CALL    S4CHARP4
           CALL    MOVE
           DEFB    -10,-18,-16,0,0,0
+          RET
 ;
 ; STAGE 4 -- CHARACTER 5
 ;
@@ -5784,21 +6070,29 @@ S4CHAPD6: DEFB    10,4
 S4CHARP6:  LD      A,(IX+1)
           INC     (IX+1)
           CP      3
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,5,-10,0,-1,0
+          RET
+          ;
           CP      6
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,-5,-10,0,1,0
+          RET
+          ;
           CP      9
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,5,-10,0,1,0
+          RET
+          ;
           CP      12
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,-5,-10,0,-1,0
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S4CHARP6
@@ -5834,6 +6128,7 @@ S4CHARP7: CALL    RTURN
           DEFB    128,128,128,3,0,0
           CALL    MOVE
           DEFB    0,0,-12,-3,0,0
+          RET
           ;
 S4CHRA72:  CALL    RND
           AND     127
@@ -5879,21 +6174,29 @@ S4BOSSRP: LD      A,(IX+13)
 S4BOSRJ:  LD      A,(IX+1)
           INC     (IX+1)
           CP      8
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,0H,3,0,0
+          RET
+          ;
           CP      40
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,0,0,3,0
+          RET
+          ;
           CP      72
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,0,0,0,3
+          RET
+          ;
           CP      88
-          JR      NC,$+11
+          JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,0,2,2,2
+          RET
+          ;
           XOR     A
           LD      (IX+1),A
           JR      S4BOSRJ
