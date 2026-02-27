@@ -21,8 +21,9 @@ MSXPen上にステージセレクト有りのバージョンを再生しよう�
 
 2026/01/12 ver2.1.1 <BR>バグフィクスアップデート<BR>スプライトを完全OFFにするBASIC記述部分が間違えていたので修正<BR><BR>
 2026/02/25 ver変更なし<BR>Geminiでアセンブラソースのコア部分にコメントを入れてみた<BR><BR>
+2026/02/27 ver2.2.0 <BR>マイナーアップデート<BR>挙動を解析しにくかったMOVEルーチンのリターン先を変更<BR>コメントをデモ全体までつけた<BR><BR>
 
-最終バージョンのMSXPen ver2.1.1
-https://msxpen.com/codes/-OmI8dCOKz_b3aJP5NmY
+最終バージョンのMSXPen ver2.2.0
+https://msxpen.com/codes/-OmSAQ88OwpQoZfcQrNH
 
 <a href="https://deepwiki.com/msx2rockcity/rockcity-2024"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
