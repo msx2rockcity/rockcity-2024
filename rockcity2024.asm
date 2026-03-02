@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 2.2.0
+;  MSXPen LAST VERSION VER 2.3.0
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -14,18 +14,26 @@
 ;  MAIN1
 ;
 ;-------------------------------------------
-GTSTCK:   EQU     00D5H
-GTTRIG:   EQU     00D8H
-NNEG:     EQU     44EDH
-BREAKX:   EQU     00B7H
-CALSLT:   EQU     001CH
-WRTPSG:   EQU	  0093H
-EXPTBL:   EQU     0FCC1H
-MJVER:    EQU     '2'
-MIVER:    EQU     '2'
-PTVER:    EQU     '0'
-DSTOCK    EQU     9
-          ORG     09000H
+GTSTCK:  EQU     00D5H   ; [BIOS] ジョイスティック(または矢印キー)の状態を取得
+                         ; AレジスタにIDを入れ呼び出すと、方向(0-8)が返ります。
+GTTRIG:  EQU     00D8H   ; [BIOS] トリガーボタン(スペースキー/ジョイボタン)の状態を取得
+                         ; ボタンが押されているかどうかを確認するためのルーチンです。
+NNEG:    EQU     44EDH   ; [MATH-ROM] 浮動小数点数(または数値)の符号を反転させる
+                         ; おそらく演算ライブラリ内のサブルーチンを直接叩いています。
+BREAKX:  EQU     00B7H   ; [BIOS] CTRL+STOPキーの押下チェック
+                         ; 実行中にユーザーが中断を試みたかどうかを判定します。
+CALSLT:  EQU     001CH   ; [BIOS] 別のスロットにあるルーチンを呼び出す（インタースロット・コール）
+                         ; 拡張カートリッジや裏側のROMにあるプログラムを呼ぶ際に必須のゲートです。
+WRTPSG:  EQU     0093H   ; [BIOS] PSG(音源チップ AY-3-8910)のレジスタにデータを書き込む
+                         ; 音の高さ、音量、ノイズ、エンベロープなどを制御する司令塔です。
+EXPTBL:  EQU     0FCC1H  ; [WORK AREA] 基本スロットの拡張フラグが格納されているワークエリア
+                         ; MSXのメモリマップは複雑なので、CALSLTを使う際にここを参照して
+                         ; 「どのスロットが拡張されているか」を確認するために使われます。
+MJVER:    EQU     '2'    ; メジャーバージョン
+MIVER:    EQU     '3'    ; マイナーバージョン
+PTVER:    EQU     '0'    ; パッチバージョン
+DSTOCK    EQU     9      ; デフォルト自機数（最大9機）
+          ORG     08200H ; 開始アドレス（限界まで削った）
 ;
 ;---- SCREEN & COLOR SET ----
 ;
@@ -69,6 +77,17 @@ START:    LD      A,(EXPTBL)    ; メインスロットの拡張テーブルを取得
 ;
 ;---- MAIN ROUTINE ----
 ;
+; SWITCHフラグの機能
+;
+; bit0  地平線表示のON/OFF    1なら表示
+; bit1  自機の表示のON/OFF    1なら表示
+; bit2  自機がスピードアップ状態かどうか  1なら2重表示
+; bit3  敵オブジェクトを表示するかどうか  1なら表示
+; bit4  ゲームオーバー判定フラグ          1ならライフ0のとき自機の爆破処理を行う
+; bit5  無敵状態かのフラグ    1なら無敵状態（使われてない)
+; bit6  ライフゲージを表示するかどうか    1なら表示
+;
+;----------------------
 MAIN:     PUSH    IX            ; メインに入る前のレジスタを全て保存
           PUSH    HL            ; 
           PUSH    DE            ; 
@@ -81,7 +100,7 @@ MAINS:    PUSH    AF            ; ループカウンタ(AF)を保存
           JP      C,RETURN      ; キャリーが立てば（中断なら）終了処理へ
           ;
           CALL    CLS           ; 非表示側の画面をクリア（消去）
-          LD      A,(SWHICH)    ; システムスイッチの状態をロード
+          LD      A,(SWITCH)    ; システムスイッチの状態をロード
           BIT     0,A           ; bit0: 地平線表示処理が必要か
           CALL    NZ,SCALE      ; 必要なら地平線表示を実行
           ;
@@ -153,6 +172,38 @@ RETURN:   LD      SP,(SSTACK)   ; 中断時：スタックポインタを安全な場所へ戻す
 ;
 ;---- PORY WRITE ----
 ;
+; オブジェクトワークエリアシステム
+; 1オブジェクトあたり16バイトの領域で、最大16個のオブジェクトを生成できる
+; 16バイトの領域説明（IX=オブジェクトワーク先頭アドレス）
+;
+; (IX+0) 出現フラグ　0の時は使われていない。1の時はオブジェクト処理をする
+; (IX+1) 主に移動プログラムがカウンターや状態フラグとして使用する
+; (IX+2) SEARCH内で当たりフラグとして使用される
+; ------------- ここからの13バイトがDSETルーチンでセットされる -------------
+; (IX+3) キャラクターモデリングデータの先頭アドレス(2バイト）
+; (IX+4)
+; (IX+5) キャラクター移動ルーチンの先頭アドレス（2バイト）
+; (IX+6)
+; (IX+7)  座標 X
+; (IX+8)  座標 Y
+; (IX+9)  座標 Z
+; (IX+10) 回転角 RX
+; (IX+11) 回転角 RY
+; (IX+12) 回転角 RZ
+; (IX+13) オブジェクトの色（1オブジェクト1色）
+; (IX+14) オブジェクトの属性（当たり判定処理の分岐に使われる）
+; (IX+15) オブジェクトのフラグ（下で説明）
+;
+; オブジェクトシステム （IX+15)のフラグ機能
+;
+; bit0  表示禁止フラグ    1なら表示しない(移動ルーチンはコールされる）
+; bit1  拡大表示フラグ    1なら2.0倍
+; bit2  縮小表示フラグ    1なら0.5倍
+; bit3  当たり判定フラグ  1ならしない
+; bit4  爆発表示フラグ    1なら爆発表示
+; bit5  画面外にでたら消去するかどうか 0なら消去,1なら消去しない（使われてない）
+;
+;--------------------
 MALTI:    PUSH    AF            ; レジスタをすべて保存
           PUSH    BC            ; 
           PUSH    DE            ; 
@@ -1225,14 +1276,14 @@ STACK:    DEFW    0             ; ゲーム内スタックの退避用
 SSTACK:   DEFW    0             ; システム（BIOS）スタックの退避用
                                 ; (エラー時や中断時の復帰ポイント)
 ; --- ゲーム・コントロール ---
-SCROLL:   DEFB    0,0           ; 背景スクロール値（X, Y）
-SCOLOR:   DEFB    3,1           ; 描画色（ペン色と背景色など）
-SWHICH:   DEFB    00001001B     ; ★システム制御フラグ
+SCROLL:   DEFB    0,0           ; 未使用？
+SCOLOR:   DEFB    3,1           ; 地平線描画色、スクロール速度
+SWITCH:   DEFB    00001001B     ; ★システム制御フラグ
                                 ; (bit0:スケーリング, bit3:ザコ敵描画 ...等のスイッチ)
 CONTRT:   DEFW    00            ; コントロールルーチンのアドレス
 DEADRT:   DEFW    00            ; プレイヤー死亡（LIFE=0）時のジャンプ先
 LIFE:     DEFB    16            ; プレイヤーの耐久力（16段階）
-STOCK:    DEFB    3             ; 残機
+STOCK:    DEFB    DSTOCK        ; 残機
 SCORE:    DEFW    00            ; 現在のスコア
 HSCORE:   DEFW    00            ; ハイスコア
 GAGE:     DEFB    0,0,0,0,0,0   ; 当たり判定ボックス
@@ -1251,6 +1302,30 @@ TOP2:	  EQU	  $
 ;
 ; 文字列表示ルーチン
 ;
+; ※オブジェクトワークの使い方が敵オブジェクトとは異なります
+;
+; IX+2   カウンター
+; IX+3,4 表示モデルデータアドレス
+; IX+5,6 MHYOUJアドレス
+; IX+7   文字の色
+; IX+8   消滅設定時間（寿命）
+; IX+9   消灯時間の長さ（ウェイト値）
+; IX+10  点灯時間の長さ（ウェイト値）
+; IX+11 （0:消灯中 / 1:点灯中）
+; IX+12  文字列のX座標
+; IX+13  文字列のY座標
+; IX+14  未使用？
+; IX+15  フラグ
+;
+; ※(IX+15) フラグの機能
+;
+; bit1 x座標2倍拡大表示
+; bit2 x座標0.5倍縮小表示
+; bit3 y座標2倍拡大表示
+; bit4 y座標0.5倍縮小表示
+; bit5 点滅表示フラグ
+;
+;--------------------
 MHYOUJ:   BIT     5,(IX+15)     ; 点滅フラグ(bit5)を確認
           JR      Z,HMOJI       ; フラグが0なら点滅させずに表示へ
           ; --- 点滅処理開始 ---
@@ -1923,15 +1998,15 @@ RETSTI:   POP     IX            ; 保存していたレジスタを全て復帰
 ;
 ; DEAD ROUTINE
 ;
-; 自機の破壊ルーチン
+; 死亡時に呼ばれるルーチン
 ;
 DEAD:     CALL    EXPLO         ; 爆発音または爆発エフェクトを呼び出し
           LD      SP,(STACK)    ; スタックポインタをゲーム開始時の状態に復帰
           LD      HL,DEADPT     ; 自機用の「撃墜時専用AIルーチン」のアドレスをロード
           LD      (MASTER+5),HL ; 自機(MASTER)のプログラムポインタを書き換え
-          LD      A,(SWHICH)    ; システムスイッチをロード
-          AND     11101111B     ; bit4をオフにする（ゲームオーバー判定などを一時停止）
-          LD      (SWHICH),A    ; スイッチを更新
+          LD      A,(SWITCH)    ; システムスイッチをロード
+          AND     11101111B     ; bit4をオフにする（ゲームオーバー判定を停止）
+          LD      (SWITCH),A    ; スイッチを更新
           LD      HL,0          ; 
           LD      (GAGE),HL     ; パワーアップゲージ等をリセット
           LD      A,45          ; 45フレーム分の待ち時間を設定
@@ -1944,24 +2019,88 @@ DEAD:     CALL    EXPLO         ; 爆発音または爆発エフェクトを呼び出し
           JP      Z,GMOVER      ; 残機が0になったらゲームオーバールーチンへ
           LD      (STOCK),A     ; 残った機数を保存
           CALL    MSSTR         ; 自機の初期位置・状態を再設定（再スタート準備）
-          LD      HL,(CONTRT)   ; ゲーム本編のコントロールルーチンをロード
-          JP      (HL)          ; 本編へ復帰（復活！）
-          ;
-DEADPT:   LD      A,(IX+9)      ; 自機の内部パラメータ（おそらくZ座標または速度）をロード
-          ADD     A,6           ; 値を増やす（遠ざかる、あるいは落下する演出）
-          CP      200           ; 一定値（200）に達したかチェック
+          LD      HL,(CONTRT)   ; コンティニューアドレスをロード
+          JP      (HL)          ; アドレスへ復帰
+;
+; 自機の破壊移動ルーチン
+;
+DEADPT:   LD      A,(IX+9)      ; Z座標をロード
+          ADD     A,6           ; 遠ざかる
+          CP      200           ; Zが一定値（200）に達したかチェック
           JR      NC,$+12       ; 達していれば、下の「消滅処理」へスキップ
-          LD      (IX+9),A      ; 更新した値を保存
-          INC     (IX+10)       ; 別のパラメータ（回転角など）を増加させて
-          INC     (IX+10)       ; 激しくスピンさせる演出
-          RET                   ; 1フレーム分の演出終了
-          ; --- 演出終了後の設定変更（上のNC条件が成立したとき実行） ---
+          LD      (IX+9),A      ; 更新したZ値を保存
+          INC     (IX+10)       ; 回転させる
+          INC     (IX+10)       ; 
+          RET                   ; 
+          ; --- 消滅処理 ---
           LD      A,00011000B   ; 特殊なフラグ（描画オフなど）をセット
           LD      (IX+15),A     ; 
-          LD      A,(SWHICH)    ; システムスイッチをロード
+          LD      A,(SWITCH)    ; システムスイッチをロード
           AND     11111001B     ; bit1, bit2などをオフにして自機の描画を完全に止める
-          LD      (SWHICH),A    ; 
+          LD      (SWITCH),A    ; 
           RET                   ; 戻る
+;
+; 爆発モデル表示ルーチン 　　IX<-オブジェクトデータ
+;
+; 主にボスのオブジェクトがコール。自分を消して、自分自身のコピーオブジェクトを
+; 爆発フラグを立てて作成する
+;
+BOMBOBJ:  LD      HL,BOBJPTR
+          LD      A,(IX+3)      ; 表示オブジェクトデータ
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+4)
+          LD      (HL),A
+          INC     HL
+          INC     HL
+          INC     HL
+          LD      A,(IX+7)      ; X
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+8)      ; Y
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+9)      ; Z
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+10)     ; RX
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+11)     ; RY
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+12)     ; RZ
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+13)     ; RX
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+14)     ; RX
+          LD      (HL),A
+          INC     HL
+          LD      A,(IX+15)     ; フラグ（拡大表示などをしている場合があるので）
+          SET     3,A           ; 当たり判定をしない
+          SET     4,A           ; 爆発オブジェクト表示
+          LD      (HL),A
+          ;          
+	      CALL    DSET          ; 表示タスク登録（メッセージ表示用）
+BOBJPTR:  DEFW    0,BOMBMV      ; 表示データ(STARTM)と描画関数(MHYOUJ)を指定
+          DEFB    0,0,0,0,0,0   ; x,y,z,rx,ry,rz
+          DEFB    0,0,0         ; 色、属性、フラグ設定
+          RET
+;
+; 爆発オブジェクト移動ルーチン
+;
+BOMBMV:
+          LD     A,(IX+1)
+          INC    A
+          LD     (IX+1),A
+          CP     1
+          JR     C,BOMBRET
+          XOR    A
+          LD    (IX+0),A
+BOMBRET:  RET
+
 ;
 ; TUCH ROUTINE ( 0 - 4 )
 ;
@@ -1971,7 +2110,7 @@ TUCH0:    CALL    PISTOL        ; 被弾音（または火花エフェクト）を呼び出し
           ;
 ;---- 破壊オブジェクトに当たった処理　ダメージ1 ----
 TUCH1:    CALL    PISTOL        ; 被弾音を鳴らす
-          LD      A,(SWHICH)    ; システムスイッチをロード
+          LD      A,(SWITCH)    ; システムスイッチをロード
           BIT     5,A           ; bit5: 無敵フラグ（？）をチェック
           RET     NZ            ; 無敵状態ならダメージ処理をスキップ
           LD      A,(LIFE)      ; 現在のライフをロード
@@ -1989,7 +2128,7 @@ TUCH2:    CALL    PISTOL        ; 被弾音を鳴らす
           LD      (IX+2),A      ; オブジェクトの特定パラメータをリセット
           LD      A,(MASTER+13) ; 自機の属性（色？）を取得
           LD      (LIDAT+4),A   ; 描画用の色としてセット（被弾フラッシュ用？）
-          LD      A,(SWHICH)    ; システムスイッチをロード
+          LD      A,(SWITCH)    ; システムスイッチをロード
           BIT     5,A           ; 無敵チェック
           RET     NZ            ; 無敵なら戻る
           LD      A,(LIFE)      ; ライフをロード
@@ -2016,13 +2155,14 @@ TUCH3:    CALL    ITEMGT        ; アイテム取得音を鳴らす
 ;---- スピードアップアイテムに当たった処理
 TUCH4:    CALL    ITEMGT        ; アイテム取得音を鳴らす
           CALL    MOVESD        ; 
-          LD      A,(SWHICH)    ; システムスイッチをロード
+          LD      A,(SWITCH)    ; システムスイッチをロード
           XOR     00000100B     ; bit2を反転（スピードアップフラグを反転）
-          LD      (SWHICH),A    ; スイッチを更新
+          LD      (SWITCH),A    ; スイッチを更新
           XOR     A             ; 
           LD      (IX+0),A      ; アイテムオブジェクトを消滅させる
           LD      (IX+2),A      ; 
           RET                   ; 戻る
+          ;
 ;
 ; MASTER START ROUTINE
 ;
@@ -2031,13 +2171,13 @@ TUCH4:    CALL    ITEMGT        ; アイテム取得音を鳴らす
 MSSTR:    LD      HL,MSSTDT     ; 自機の初期状態データ（16バイト）のアドレス
           LD      DE,MASTER     ; 自機のメインワークエリア
           LD      BC,16         ; 転送サイズ
-          LDIR                  ; 初期データをワークへ一括コピー（LDIRは便利ですね！）
+          LDIR                  ; 初期データをワークへ一括コピー
           LD      A,16          ; 
           LD      (LIFE),A      ; ライフを最大値(16)に回復
-          LD      A,(SWHICH)    ; システムスイッチをロード
+          LD      A,(SWITCH)    ; システムスイッチをロード
           OR      00010010B     ; bit1(自機描画), bit4(死亡判定)をONにする
-          LD      (SWHICH),A    ; スイッチを更新
-          CALL    CLSPRI        ; スプライト（もしあれば）を消去してクリーンに
+          LD      (SWITCH),A    ; スイッチを更新
+          CALL    CLSPRI        ; オブジェクトワークエリア全消去
           ; --- 「GO AHEAD」メッセージのセット ---
           CALL    DSET          ; 表示タスク登録（メッセージ表示用）
           DEFW    STARTM,MHYOUJ ; 表示データ(STARTM)と描画関数(MHYOUJ)を指定
@@ -2707,7 +2847,7 @@ LOGODEMO:
           LD      A,00001000B   ; ビット属性設定
           LD      (IX+2),A      
           ;
-          CALL    CLSPRI        ; スプライトの消去
+          CALL    CLSPRI        ; オブジェクトワークエリア全消去
           CALL    UNFADE        ; フェードイン開始（画面を明るくする）
           LD      A,8           ; 
           CALL    MAIN          ; 8フレームMAIN実行
@@ -2890,7 +3030,7 @@ TITLE:    LD      IX,SCOLOR     ; 色管理ワークエリア設定
           LD      A,00001001B   ; 属性設定
           LD      (IX+2),A
           ;
-MENSET:   CALL    CLSPRI        ; スプライト消去
+MENSET:   CALL    CLSPRI        ; オブジェクトワークエリア全消去
           CALL    UNFADE        ; フェードイン開始
           LD      A,4           ; 4フレームMAINを実行
           CALL    MAIN
@@ -3028,7 +3168,7 @@ MJIPAT:   LD      A,(IX+1)      ; ワークエリアからカウンタ（時間）を取得
 PATER1:   LD      A,(IX+1)      ; ワークエリアから経過時間（カウンタ）を取得
           INC     (IX+1)        ; カウンタを更新
           ;
-          ; --- フェーズ1: 登場時の急接近演出 (0?7フレーム) ---
+          ; --- フェーズ1: 登場時の急接近演出 (0-7フレーム) ---
           CP      8             ; カウンタが8未満か？
           JR      NC,$+12       ; 8以上なら次の処理(11バイト先)へジャンプ
           CALL    MOVE          ; Z軸（奥から手前）へ高速移動
@@ -3036,7 +3176,7 @@ PATER1:   LD      A,(IX+1)      ; ワークエリアから経過時間（カウンタ）を取得
           DEFB    0,-4,2        ; 加速度設定
           RET
           ;
-          ; --- フェーズ2: 画面の震え/バイブレーション演出 (8?29フレーム) ---
+          ; --- フェーズ2: 画面の震え/バイブレーション演出 (8-29フレーム) ---
           CP      30            ; カウンタが30未満か？
           JR      NC,TDPJ1      ; 30以上なら回転処理(TDPJ1)へ
           AND     2             ; ビット1をチェック（2フレームおきに真）
@@ -3051,7 +3191,7 @@ PATER1:   LD      A,(IX+1)      ; ワークエリアから経過時間（カウンタ）を取得
           DEFB    0,0,0
           RET
           ;
-          ; --- フェーズ3: 回転(RTURN)と複雑な移動 (30?65フレーム) ---
+          ; --- フェーズ3: 回転(RTURN)と複雑な移動 (30-65フレーム) ---
 TDPJ1:    CP      66            ; カウンタが66未満か？
           JR      NC,$+21       ; 66以上ならこの演出を終了（20バイト先へ）
           ;
@@ -3073,7 +3213,7 @@ TDPJ1:    CP      66            ; カウンタが66未満か？
 PATER2:   LD      A,(IX+1)      ; 経過時間（カウンタ）を取得
           INC     (IX+1)        ; カウンタを更新
           ;
-          ; --- フェーズ1: 回転しながらズーム（0?15フレーム） ---
+          ; --- フェーズ1: 回転しながらズーム（0-15フレーム） ---
           CP      16            
           JR      NC,$+12       ; 16以上なら次へ
           CALL    MOVE          ; 前方に回転移動しながら登場
@@ -3087,7 +3227,7 @@ PATER2:   LD      A,(IX+1)      ; 経過時間（カウンタ）を取得
           LD      (IX+9),A      ; ワークエリア(IX+9)に初期値を投入
           LD      A,16          ; カウンタ調整用
           ;
-          ; --- フェーズ2: 回転しながらズームその2（16?33フレーム） ---
+          ; --- フェーズ2: 回転しながらズームその2（16-33フレーム） ---
 TDPJ2:    CP      34            
           JR      NC,$+12       ; 34以上なら次へ
           CALL    MOVE          
@@ -3095,7 +3235,7 @@ TDPJ2:    CP      34
           DEFB    2,0,0         
           RET
           ;
-          ; --- フェーズ3: 2軸回転演出 (34?69フレーム) ---
+          ; --- フェーズ3: 2軸回転演出 (34-69フレーム) ---
           CP      70            
           JR      NC,$+12       ; 70以上なら次へ
           CALL    MOVE          
@@ -3103,7 +3243,7 @@ TDPJ2:    CP      34
           DEFB    0,-1,-1       ; 2軸回転
           RET
           ;
-          ; --- フェーズ4: 特殊移動 A (70?119フレーム) ---
+          ; --- フェーズ4: 特殊移動 A (70-119フレーム) ---
           CP      120           
           JR      NC,$+12       ; 120以上なら次へ
           CALL    MOVE          
@@ -3111,7 +3251,7 @@ TDPJ2:    CP      34
           DEFB    0,0,-1        
           RET
           ;
-          ; --- フェーズ5: 特殊移動 B (120?189フレーム) ---
+          ; --- フェーズ5: 特殊移動 B (120-189フレーム) ---
           CP      190           
           JR      NC,$+12       ; 190以上なら次へ
           CALL    MOVE          
@@ -3133,9 +3273,9 @@ TDPJ2:    CP      34
 ;
 ; SELECT: ゲームモード選択処理 (GAME か PRACTICE か)
 ;
-SELECT:   CALL    CLSPRI        ; スプライト/画面のクリア
+SELECT:   CALL    CLSPRI        ; オブジェクトワークエリア全消去
           LD      A,00001001B   ; 画面制御用フラグ（ビット操作）
-          LD      (SWHICH),A    ; 表示切り替えスイッチを保存
+          LD      (SWITCH),A    ; 表示切り替えスイッチを保存
           LD      A,13          ; 文字色（カラーコード13）を設定
           LD      (SCOLOR),A    ; カラー変数に保存
           ;
@@ -3260,9 +3400,9 @@ MOJIMV:   INC     (IX+1)        ; インデックスレジスタを使って文字を動かす
 ;
 ;------------------------------------------------
 
-PRATCE:   CALL    CLSPRI        ; スプライトと画面表示を初期化（クリア）
+PRATCE:   CALL    CLSPRI        ; オブジェクトワークエリア全消去
           LD      A,00001001B   ; 画面表示モードの設定フラグ
-          LD      (SWHICH),A    ; 表示切り替えフラグを保存
+          LD      (SWITCH),A    ; 表示切り替えフラグを保存
           LD      A,1           ; 地平線の速度を設定
           LD      (SCOLOR+1),A  ; 地平線の速度をセット
           ;
@@ -3418,11 +3558,11 @@ TBLCOR:   DEFB    11,2,4,6      ; 水色、赤、青、緑（などのパレット番号）
 ;
 ;--------------------------------------------------
 
-ENDING:   CALL    CLSPRI        ; 画面とスプライトをクリア
+ENDING:   CALL    CLSPRI        ; オブジェクトワークエリア全消去
           LD      A,8
           CALL    MAIN          ; 8フレームMAINを実行
           LD      A,00001001B
-          LD      (SWHICH),A    ; 表示フラグ設定
+          LD      (SWITCH),A    ; 表示フラグ設定
           LD      HL,0203H      ; 地平線の色と速度
           LD      (SCOLOR),HL   ; 地平線一括設定
           LD      HL,0
@@ -3445,7 +3585,7 @@ ENDING:   CALL    CLSPRI        ; 画面とスプライトをクリア
           LD      A,36
           CALL    MAIN          ; 36フレームMAIN実行（文字を読ませる間隔）
           ;
-          ; --- 作者名"MSX2 ROCK CITY"の表示 ---
+          ; --- 作者名"MSX2ROCKCITY"の表示 ---
           CALL    DSET
           DEFW    MSX2ROC,MHYOUJ
           DEFB    2,34,0,0,0,73
@@ -3482,7 +3622,7 @@ ENDING:   CALL    CLSPRI        ; 画面とスプライトをクリア
           LD      A,16
           CALL    MAIN
           LD      A,00001000B   ; 表示設定を変更
-          LD      (SWHICH),A
+          LD      (SWITCH),A
           ;
           ; --- 最後の一言 "MSX" "FOREVER" ---
           CALL    DSET
@@ -3564,7 +3704,7 @@ FOREVM:   DEFB    'F',0,0,'O',15,0,'R',30,0,'E',45,0,'V',60,0,'E',75,0
 ; SCORE DEMO
 ;
 ;------------------------------------------
-WSCORE:   CALL    CLSPRI          ; スプライトの消去
+WSCORE:   CALL    CLSPRI          ; オブジェクトワークエリア全消去
           LD      HL,(SCORE)      ; 現在のスコアをロード
           LD      IX,NSCORM       ; スコアの先頭アドレスをセット
           CALL    CHTEN           ; 数値を10進数テキスト（IXのアドレスに）に変換
@@ -3612,7 +3752,7 @@ HSCORD:   DEFW    HSCORM,MHYOUJ
           ; --- 演出・画面遷移 ---
           CALL    UNFADE          ; フェードイン（表示開始）
           LD      A,00001000B     ; スイッチ切り替え用ビット
-          LD      (SWHICH),A
+          LD      (SWITCH),A
           CALL    UNFADE          ; 再度フェード（または画面更新）
           ;          
           LD      A,50            ;
@@ -3638,7 +3778,7 @@ SCORE2:   DEFB    'S',0,0,'C',15,0,'O',30,0,'R',45,0,'E',60,0,0
 ; GAME OVER DEMO
 ;
 ;------------------------------------------------
-GMOVER:   CALL    CLSPRI          ; スプライトの消去
+GMOVER:   CALL    CLSPRI          ; オブジェクトワークエリア全消去
           LD      A,14            ; 
           CALL    MAIN            ; 14フレームMAINを実行(待ち）
           CALL    DSET            ; GAMEOVER文字列表示オブジェクト生成
@@ -3648,7 +3788,7 @@ GMOVER:   CALL    CLSPRI          ; スプライトの消去
           ;
           CALL    UNFADE          ; 暗転状態からじわっと表示（フェードイン）
           LD      A,00001000B     
-          LD      (SWHICH),A                
+          LD      (SWITCH),A                
           LD      A,32            ; 32フレームMAINを実行
           CALL    MAIN            ; "GAME OVER" を読ませるためのウェイト
           ;          
@@ -3670,205 +3810,212 @@ GMOVEM:   ; 1行目: "GAME"
 ; STAGE 1
 ;
 ;-----------------------------------------------------------
-;
-;---- STAGE1 PROGRAM ----
-;
-STAGE1:   CALL    CLSPRI
-		  LD	  (STACK),SP
-          LD      A,00001000B
-          LD      (SWHICH),A
-          CALL    DSET
-          DEFW    S1STAGM1,MHYOUJ
-          DEFB    11,40,0,0,0,44
-          DEFB    0,0,00010101B
-          CALL    DSET
-          DEFW    S1STAGM2,MHYOUJ
-          DEFB    11,40,0,0,0,40
-          DEFB    50,0,00010001B
-          CALL    UNFADE
-          LD      A,32
-          CALL    MAIN
-          CALL    FADE
-          LD      A,8
-          CALL    MAIN
-          CALL    MSSTR
+
+STAGE1:   CALL    CLSPRI          ; オブジェクトワークエリア全消去
+          LD      (STACK),SP      ; 現在のスタックポインタを保存
+          LD      A,00001000B     ; 表示スイッチセット
+          LD      (SWITCH),A      ; 
+          CALL    DSET            ; 画面に「ZONE 1」を表示するオブジェクト生成
+          DEFW    S1STAGM1,MHYOUJ ; 表示データのアドレスと表示ルーチン
+          DEFB    11,40,0,0,0,44  ; 
+          DEFB    0,0,00010101B   ; 
+          CALL    DSET            ; 画面に「PLANE」を表示するオブジェクト生成
+          DEFW    S1STAGM2,MHYOUJ ; 
+          DEFB    11,40,0,0,0,40  ; 
+          DEFB    50,0,00010001B  ; 
+          CALL    UNFADE          ; 画面を徐々に明るくする（フェードイン）
+          LD      A,32            ; 
+          CALL    MAIN            ; 32フレームMAINを実行
+          CALL    FADE            ; 画面を徐々に暗くする（文字を消す演出）
+          LD      A,8             ; 短いウェイトを設定
+          CALL    MAIN            ; 8フレームMAINを実行
+          CALL    MSSTR           ; 自機の表示開始
+
+;--- 地平線有りの前半セクション ---
+S1CONT:   CALL    MOVESD          ; 移動サウンド開始
+          LD      HL,S1STAGD1     ; ステージ制御データの転送元アドレス
+          LD      DE,SCROLL       ; SCROLLから始まるワークエリアを転送先に設定
+          LD      BC,9            ; 転送バイト数（9バイト）
+          LDIR                    ; データを一括転送
+          LD      HL,S2JPDAT1     ; STAGE1固有の当たり判定用ジャンプテーブル（転送元）
+          LD      DE,JPTUCH       ; 当たり判定用ワーク（転送先）
+          LD      BC,32           ; 転送バイト数（32バイト）
+          LDIR                    ; 転送
+          LD      A,24            ; 24フレームMAIN実行
+          CALL    MAIN            ; 
+          LD      B,192           ; 道中の敵出現ループ回数を192回に設定
+S1LOOP:   LD      HL,S1RETLOP     ; 戻り先アドレスをHLにロード
+          PUSH    HL              ; スタックに積む（敵出現JP先からの共通戻り先にする）
+          CALL    RND             ; Aレジスタに乱数を取得
+          CP      90              ; 90未満なら
+          JP      C,S1CHARA1      ; 敵1（タイプA）を生成
+          CP      150             ; 150未満なら
+          JP      C,S1CHARA2      ; 敵2（タイプB）を生成
+          CP      200             ; 200未満なら
+          JP      C,S1CHARA3      ; 敵3（タイプC）を生成
+          CP      240             ; 240未満なら
+          JP      C,TECHNO        ; テクノイトを作成
+          JP      PARTY           ; 240以上なら人間かキャンプを作成
+S1RETLOP: CALL    TURBO           ; ターボアイテム作成ルーチンを呼び出す
+          CALL    CURE            ; 回復アイテム作成ルーチンを呼び出す
+          LD      A,B             ; 現在のループカウンタをAへ
+          RLCA                    ; ビットを左に回転（ウェイトの計算）
+          RLCA                    ; 4倍速的な計算
+          AND     3               ; 下位2ビットを抽出
+          INC     A               ; +1
+          INC     A               ; +2（最低ウェイトを2に固定）
+          CALL    MAIN            ; 計算されたウェイト分だけMAIN実行
+          DJNZ    S1LOOP          ; Bを1減らし、0でなければループ継続
+
+          LD      A,(SWITCH)      ; 表示フラグを取得
+          AND     11111110B       ; 地平線を消す
+          LD      (SWITCH),A      ; 設定を反映
+          LD      HL,S1CONT2      ; 次の再開アドレスをセット
+          LD      (CONTRT),HL     ; コンティニュー用ワークに保存
+
+;--- 地平線を消した後半戦セクション ---
+S1CONT2:  CALL    MOVESD          ; 移動サウンドコール（コンティニュー用）
+          LD      A,28            ; 28フレームMAIN実行
+          CALL    MAIN            ;
           ;
-S1CONT:   CALL	  MOVESD
-		  LD      HL,S1STAGD1
-          LD      DE,SCROLL
-          LD      BC,9
-          LDIR
-          LD      HL,S2JPDAT1
-          LD      DE,JPTUCH
-          LD      BC,32
-          LDIR
-          LD      A,24
-          CALL    MAIN
-          LD      B,192
-S1LOOP:   LD      HL,S1RETLOP
-          PUSH    HL
-          CALL    RND
-          CP      90
-          JP      C,S1CHARA1
-          CP      150
-          JP      C,S1CHARA2
-          CP      200
-          JP      C,S1CHARA3
-          CP      240
-          JP      C,TECHNO
-          JP      PARTY
-S1RETLOP: CALL    TURBO
-          CALL    CURE
-          LD      A,B
-          RLCA
-          RLCA
-          AND     3
-          INC     A
-          INC     A
-          CALL    MAIN
-          DJNZ    S1LOOP
+          ; 直方体のラッシュ
+          LD      B,40            ; 敵3を40体出すループ
+S1LOOP2:  CALL    S1CHARA3        ; 敵3を呼ぶ
+          CALL    S1CHARA3        ; もう一体呼ぶ
+          LD      A,2             ; 2フレームMAIN実行
+          CALL    MAIN            ; 
+          DJNZ    S1LOOP2         ; ループ
           ;
-          LD      A,(SWHICH)
-          AND     11111110B
-          LD      (SWHICH),A
-          LD      HL,S1CONT2
-          LD      (CONTRT),HL
-S1CONT2:  CALL    MOVESD
-		  LD      A,28
-          CALL    MAIN
-          LD      B,40
-S1LOOP2:  CALL    S1CHARA3
-          CALL    S1CHARA3
-          LD      A,2
-          CALL    MAIN
-          DJNZ    S1LOOP2
-          LD      B,50
-S1LOOP3:  CALL    S1CHARA1
-          CALL    S1CHARA1
-          CALL    CURE
-          CALL    TURBO
-          LD      A,2
-          CALL    MAIN
-          DJNZ    S1LOOP3
-          LD      A,16
-          CALL    MAIN
-          JP      S1BOSS
-;
-; STAGE1 DATA
-;
-S1STAGD1: DEFB    32,5,11,2
-          DEFB    01011011B
-          DEFW    S1CONT,DEAD
+          ; 三角錐のラッシュ
+          LD      B,50            ; 敵1を50体出すループ
+S1LOOP3:  CALL    S1CHARA1        ; 敵1を呼ぶ
+          CALL    S1CHARA1        ; もう一体呼ぶ
+          CALL    CURE            ; 自機状態の更新
+          CALL    TURBO           ; 高速化ルーチン
+          LD      A,2             ; 2フレーム待機
+          CALL    MAIN            ; 画面更新
+          DJNZ    S1LOOP3         ; ループ
           ;
-S1JPDAT1: DEFW    TUCH0,TUCH1
-          DEFW    TUCH2,TUCH3
-          DEFW    TUCH4,TUCH5
-          DEFW    TUCH6,TUCH6
-          DEFW    TUCH17,TUCH18
+          LD      A,16            ; 最後の静寂（16フレーム）
+          CALL    MAIN            ; 画面更新
+          JP      S1BOSS          ; ボス戦ルーチンへジャンプ
+
+;--- ステージ1 各種データ定義 ---
+S1STAGD1: DEFB    32,5,11,2       ; スクロール速度や背景制御のパラメータ
+          DEFB    01011011B       ; ステージ属性フラグ
+          DEFW    S1CONT,DEAD     ; 正常復帰アドレスと死亡時復帰アドレス
+
+S1JPDAT1: DEFW    TUCH0,TUCH1     ; 当たり判定の処理分岐テーブル（16個分）
+          DEFW    TUCH2,TUCH3     ; アイテムやダメージなどの
+          DEFW    TUCH4,TUCH5     ; ジャンプ先が
+          DEFW    TUCH6,TUCH6     ; ステージごとに
+          DEFW    TUCH17,TUCH18    ; ここで定義される
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
-          ;
-S1STAGM1: DEFB    'Z',60,80
-          DEFB    'O',75,80
-          DEFB    'N',90,80
-          DEFB    'E',105,80
-          DEFB    '1',120,80,0
-S1STAGM2: DEFB    'P',30,80
+
+S1STAGM1: DEFB    'Z',60,80       ; キャラクター 'Z', X座標60, Y座標80
+          DEFB    'O',75,80       ; キャラクター 'O', X座標75, Y座標80
+          DEFB    'N',90,80       ; キャラクター 'N', X座標90, Y座標80
+          DEFB    'E',105,80      ; キャラクター 'E', X座標105, Y座標80
+          DEFB    '1',120,80,0    ; キャラクター '1', X座標120, Y座標80, 終端0
+S1STAGM2: DEFB    'P',30,80       ; "PLANET" の各文字座標定義
           DEFB    'L',60,80
           DEFB    'A',90,80
           DEFB    'N',120,80
           DEFB    'E',150,80,0
-;
-; STAGE 1 -- CHARACTER 1
-;
-S1CHARA1: CALL    RND
-          CP      186
-          JR      NC,$-5
-          ADD     A,38
-          LD      (S1CHARD1+4),A
-          CALL    RND
-          CP      196
-          JR      NC,$-5
-          ADD     A,44
-          LD      (S1CHARD1+5),A
-          CALL    DSET
-S1CHARD1: DEFW    S1CHAPT1,S1CHAMV1
-          DEFB    0,0,250,0,0,0
-          DEFB    10,1,00000000B
+;-----------------------------------------------------------
+; 敵1生成ルーチン
+;-----------------------------------------------------------
+S1CHARA1: CALL    RND             ; 乱数取得
+          CP      186             ; 186以上なら
+          JR      NC,$-5          ; 範囲内に収まるまでやり直し
+          ADD     A,38            ; オフセットを足して出現位置を調整
+          LD      (S1CHARD1+4),A  ; 出現データにX座標を書き込み
+          CALL    RND             ; 乱数取得
+          CP      196             ; 196以上なら
+          JR      NC,$-5          ; やり直し
+          ADD     A,44            ; オフセットを足して調整
+          LD      (S1CHARD1+5),A  ; Y座標を書き込み
+          CALL    DSET            ; オブジェクトをワークエリアに登録
+S1CHARD1: DEFW    S1CHAPT1,S1CHAMV1 ; スプライト形状アドレス, 移動ルーチンアドレス
+          DEFB    0,0,250,0,0,0   ; 
+          DEFB    10,1,00000000B  ; 
+          RET                     ; 
+
+S1CHAMV1: CALL    MOVE            ; 敵1の移動ルーチン
+          DEFB    0,0,-32,0,0,-2  ; 
+          RET                     ; 
+
+S1CHAPT1: DEFB    4,0             ; 敵1のモデリングデータ
+          DEFB    -32, 18, 18     ; 頂点1の相対座標(X,Y,Z)
+          DEFB     32, 18, 18     ; 頂点2
+          DEFB      0,-36, 18     ; 頂点3
+          DEFB      0,  0,-36     ; 頂点4
+          DEFB    1,2,3,1,4,2,0   ; 線を引く順序の定義（スプライト接続）
+          DEFB    4,3,0,0         ; 終端
+
+;-----------------------------------------------------------
+; 敵2生成ルーチン
+;-----------------------------------------------------------
+S1CHARA2: CALL    RND             ; 乱数取得
+          AND     127             ; 0-127の範囲に制限
+          ADD     A,64            ; 64を足す
+          LD      (S1CHARD2+4),A  ; X座標を書き込み
+          CALL    RND             ; 乱数取得
+          AND     127             ; 制限
+          ADD     A,64            ; 足す
+          LD      (S1CHARD2+5),A  ; Y座標を書き込み
+          CALL    DSET            ; オブジェクト登録
+S1CHARD2: DEFW    S1CHAPT2,S1CHAMV2 ; 形状, 移動ルーチン
+          DEFB    0,0,255,0,0,0   ; 初期座標(Z=255)
+          DEFB    2,2,00000000B   ; パラメータ
           RET
-          ;
-S1CHAMV1: CALL    MOVE
-          DEFB    0,0,-32,0,0,-2
-          RET
-          ;
-S1CHAPT1: DEFB    4,0
-          DEFB    -32, 18, 18
-          DEFB     32, 18, 18
-          DEFB      0,-36, 18
-          DEFB      0,  0,-36
-          DEFB    1,2,3,1,4,2,0
-          DEFB    4,3,0,0
-;
-; STAGE 1 -- CHARACTER 2
-;
-S1CHARA2: CALL    RND
-          AND     127
-          ADD     A,64
-          LD      (S1CHARD2+4),A
-          CALL    RND
-          AND     127
-          ADD     A,64
-          LD      (S1CHARD2+5),A
-          CALL    DSET
-S1CHARD2: DEFW    S1CHAPT2,S1CHAMV2
-          DEFB    0,0,255,0,0,0
-          DEFB    2,2,00000000B
-          RET
-          ;
-S1CHAPT2: DEFB    11,3
-          DEFB    -12,-48,-12
-          DEFB    -12,-48, 12
+
+S1CHAPT2: DEFB    11,3            ; 頂点数11、属性3
+          DEFB    -12,-48,-12     ; 立体的な形状（立方体など）の頂点定義
+          DEFB    -12,-48, 12     ; 以下、各頂点の相対座標が続く
           DEFB     12,-48, 12
           DEFB     12,-48,-12
           DEFB    -12, 48,-12
           DEFB    -12, 48, 12
           DEFB     12, 48, 12
           DEFB     12, 48,-12
-          DEFB      0, 24,  0
+          DEFB      0, 24,  0     ; 当たり判定用ダミー頂点
           DEFB      0,-24,  0          
           DEFB      0,  0,  0
-          DEFB    1,2,3,4,1,5,6
+          DEFB    1,2,3,4,1,5,6   ; ワイヤーフレームの結線データ
           DEFB    7,8,5,0,4,8,0
           DEFB    3,7,0,2,6,0,0
-          ;
-S1CHAMV2: CALL    MOVE
-          DEFB    0,0,-16,2,0,0
+
+S1CHAMV2: CALL    MOVE            ; 敵2の移動ルーチン
+          DEFB    0,0,-16,2,0,0   ; 
+          RET                     ; 
+;-----------------------------------------------------------
+; 敵3生成ルーチン
+;-----------------------------------------------------------
+S1CHARA3: CALL    RND             ; 乱数取得
+          LD      (S1CHARD3+4),A  ; X座標にそのままセット
+          CALL    RND             ; 乱数取得
+          AND     127             ; 範囲制限
+          ADD     A,64            ; オフセット
+          LD      (S1CHARD3+5),A  ; Y座標セット
+          CALL    DSET            ; オブジェクト登録
+S1CHARD3: DEFW    S1CHAPT2,S1CHAMV3 ; 形状は敵2と同じ、移動ルーチンは別
+          DEFB    128,128,255     ; 画面中央・奥から出現
+          DEFB    0,0,0,2,2,00000000B ; 設定
           RET
-;
-; STAGE 1 -- CHARACTER 3
-;
-S1CHARA3: CALL    RND
-          LD      (S1CHARD3+4),A
-          CALL    RND
-          AND     127
-          ADD     A,64
-          LD      (S1CHARD3+5),A
-          CALL    DSET
-S1CHARD3: DEFW    S1CHAPT2,S1CHAMV3
-          DEFB    128,128,255
-          DEFB    0,0,0,2,2,00000000B
-          RET
-          ;
-S1CHAMV3: LD      A,(IX+9)
-          SUB     32
-          LD      (IX+9),A
-          RET
-;
-; STAGE 1 -- BOSS
-;
-S1BOSSPT: DEFB    10,0
-          DEFB      0,-48, 17
+
+S1CHAMV3: LD      A,(IX+9)        ; 現在のZ座標(IX+9)を取得
+          SUB     32              ; 32引く（猛スピードで迫る）
+          LD      (IX+9),A        ; 書き戻し
+          RET                     ; 単純な減算なのでMOVEは使わずRET
+
+;-----------------------------------------------------------
+; ボス戦(S1BOSS) メインルーチン
+;-----------------------------------------------------------
+S1BOSSPT: DEFB    10,0            ; ボスのパーツ構成
+          DEFB      0,-48, 17     ; パーツ相対座標
           DEFB      0,-61,  0
           DEFB    -13,-48,  0
           DEFB      0,-35,  0
@@ -3878,440 +4025,472 @@ S1BOSSPT: DEFB    10,0
           DEFB    -13, 48,  0
           DEFB      0, 35,  0
           DEFB     13, 48,  0
-          DEFB    2,3,4,5,2,0,2,1,4,0
+          DEFB    2,3,4,5,2,0,2,1,4,0 ; パーツ接続定義
           DEFB    3,1,5,0,7,8,9,10,7,0
           DEFB    7,6,9,0,8,6,10,0,0
+
+S1BOSMV1: LD      A,(PORIDAT)     ; ボス本体のHP/生存フラグをチェック
+          OR      A               ; Aが0かどうか判定
+          JR      Z,S1ENDMV1      ; 0（死亡）なら消去へ
+          LD      A,(IX+1)        ; ボスの行動タイマー(IX+1)を取得
+          INC     (IX+1)          ; タイマーを進める
+          CP      16              ; 16未満のとき
+          JR      NC,$+12         ; 条件不一致なら次の判定へスキップ
+          CALL    MOVE            ; 移動実行
+          DEFB    0,0,-8,2,0,0    ; 前進しながら回転
+          RET                     ; 復帰
           ;
-S1BOSMV1: LD      A,(PORIDAT)
-          OR      A
-          JR      Z,S1ENDMV1
-          LD      A,(IX+1)
-          INC     (IX+1)
-          CP      16
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,0,-8,2,0,0
+          CP      32              ; 32未満
+          JR      NC,$+12         ; スキップ
+          CALL    MOVE            ; 移動
+          DEFB    -4,0,0,0,0,0    ; 左へスライド
           RET
           ;
-          CP      32
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    -4,0,0,0,0,0
+          CP      64              ; 64未満
+          JR      NC,$+12         ; スキップ
+          CALL    MOVE            ; 移動
+          DEFB    4,0,0,0,2,0     ; 右へスライドしつつ回転
           RET
           ;
-          CP      64
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    4,0,0,0,2,0
+          CP      80              ; 80未満
+          JR      NC,$+12         ; スキップ
+          CALL    MOVE            ; 移動
+          DEFB    0,0,-4,0,0,0    ; 少し前進
           RET
           ;
-          CP      80
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,0,-4,0,0,0
+          CP      112             ; 112未満
+          JR      NC,$+12         ; スキップ
+          CALL    MOVE            ; 移動
+          DEFB    -4,0,0,0,-2,0   ; 左へ戻りながら逆回転
           RET
           ;
-          CP      112
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    -4,0,0,0,-2,0
+          CP      144             ; 144未満
+          JR      NC,$+12         ; スキップ
+          CALL    MOVE            ; 移動
+          DEFB    2,0,6,1,-2,0    ; 複雑な揺れ
           RET
           ;
-          CP      144
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    2,0,6,1,-2,0
+          XOR     A               ; A=0
+          LD      (IX+1),A        ; タイマーをリセットして行動を繰り返す
+          JR      S1BOSMV1        ; ループ先頭へ
+
+S1ENDMV1: LD      A,(IX+15)
+          CALL    BOMBOBJ         ; 破壊オブジェクト生成
+          XOR     A               ; A=0
+          LD      (IX+0),A        ; オブジェクト生存フラグを0にして消去
           RET
-          ;
-          XOR     A
-          LD      (IX+1),A
-          JR      S1BOSMV1
-S1ENDMV1: XOR     A
-          LD      (IX+0),A
-          RET
-          ;
-S1BOSMV2: LD      A,(PORIDAT)
-          OR      A
-          JR      Z,S1ENDMV2
-          LD      A,(IX+1)
-          INC     (IX+1)
-          CP      16
+
+S1BOSMV2: LD      A,(PORIDAT)     ; アーム・コア用移動ルーチン
+          OR      A               ; ボス死亡判定
+          JR      Z,S1ENDMV2      ; 消去へ
+          LD      A,(IX+1)        ; タイマー取得
+          INC     (IX+1)          ; タイマー進める
+          CP      16              ; 行動分岐1
           JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,-8,0,0,2
           RET
           ;
-          CP      32
+          CP      32              ; 行動分岐2
           JR      NC,$+12
           CALL    MOVE
           DEFB    -4,0,0,0,0,3
           RET
           ;
-          CP      64
+          CP      64              ; 行動分岐3
           JR      NC,$+12
           CALL    MOVE
           DEFB    4,0,0,0,0,0
           RET
           ;
-          CP      80
+          CP      80              ; 行動分岐4
           JR      NC,$+12
           CALL    MOVE
           DEFB    0,0,-4,0,0,-3
           RET
           ;
-          CP      112
+          CP      112             ; 行動分岐5
           JR      NC,$+12
           CALL    MOVE
           DEFB    -4,0,0,0,0,1
           RET
           ;
-          CP      144
+          CP      144             ; 行動分岐6
           JR      NC,$+12
           CALL    MOVE
           DEFB    2,0,6,-1,0,2
           RET
           ;
-          XOR     A
+          XOR     A               ; タイマーリセット
           LD      (IX+1),A
           JR      S1BOSMV2
-S1ENDMV2: XOR     A
+
+S1ENDMV2: CALL    BOMBOBJ         ; 爆発オブジェクト作成
+          XOR     A               ; 消去         
           LD      (IX+0),A
           RET
-          ;
-S1BOSS:   CALL    DSET
-          DEFW    S1ATACKM,MHYOUJ
-          DEFB    9,16,1,1,0
-          DEFB    68,80,0,00100101B
-          LD      A,17
-          CALL    MAIN
-          CALL    CLSPRI
-          CALL    DSET
-          DEFW    S1COREPT,S1BOSMV2
-          DEFB    128,128,230
-          DEFB    0,0,0,9,9,00000000B
-          CALL    DSET
-          DEFW    S1BOSSPT,S1BOSMV1
-          DEFB    128,128,230
-          DEFB    0,0,0,5,8,00000000B
-          CALL    DSET
-          DEFW    S1BOSSPT,S1BOSMV2
-          DEFB    128,128,230
-          DEFB    8,0,0,5,8,00000000B
-S1LOOP8:  LD      A,1
-          CALL    MAIN
-          LD      A,(PORIDAT)
-          OR      A
-          JR      NZ,S1LOOP8
-          LD      HL,HOME
-          LD      (MASTER+5),HL
-S1LOOP9:  LD      A,1
-          CALL    MAIN
-          LD      A,(MASTER+1)
-          OR      A
-          JR      NZ,S1LOOP9
-          ;
-          CALL    DSET
-          DEFW    S1STAGM1,MHYOUJ
-          DEFB    10,24,0,0,0,38,8
-          DEFB    0,00000101B
-          CALL    DSET
-          DEFW    S1CLEARM,MHYOUJ
-          DEFB    10,24,0,0,0,38,134
-          DEFB    0,00000101B
-          LD      A,28
-          CALL    MAIN
-          CALL    DSET
-          DEFW    S1BONUSM,MHYOUJ
-          DEFB    10,24,0,0,0,0,55
-          DEFB    0,00000101B
-          CALL    DSET
-          DEFW    S1SCOREM,MHYOUJ
-          DEFB    10,24,0,0,0,8,80
-          DEFB    0,00010101B
-          LD      HL,(SCORE)
-          LD      DE,1000
-          ADD     HL,DE
-          JR      NC,$+5
-          LD      HL,65535
-          LD      (SCORE),HL
-          LD      A,(STOCK)
-          INC     A
-          CP      10
-          JR      C,$+4
-          LD      A,9
-          LD      (STOCK),A
-          LD      A,30
-          CALL    MAIN
-          CALL    FADE
-          LD      A,24
-          CALL    MAIN
-          CALL    SDOFF
-          RET
-          ;
-TUCH17:	  CALL	  TUCH2
-          LD      A,(MASTER+9)
-          XOR     127
-          ADD     A,17
-          LD      (MASTER+9),A
-          RET
-          ;
-TUCH18    CALL    PISTOL
-          LD      A,64
-          LD      (MASTER+8),A
-          LD      A,(IX+13)
-          CP      9
+
+;--- ボス用当たり判定処理 ---
+TUCH17:   CALL    TUCH2           ; 基本のダメージ/接触処理を呼ぶ
+          ; 自機を弾き飛ばす処理
+          LD      A,(MASTER+9)    ; 自機のZ座標取得
+          XOR     127             ; ビット反転
+          ADD     A,17            ; 補正
+          LD      (MASTER+9),A    ; 書き戻し
+          RET                     ; 終了
+
+TUCH18:   CALL    PISTOL          ; ダメージ音を鳴らす
+          LD      A,64            ; パラメータ設定
+          LD      (MASTER+8),A    ; ワークへ保存
+          LD      A,(IX+13)       ; カラーを取得
+          CP      9               ; 9かチェック
+          JR      NZ,$+8          ; 違えばスキップ
+          LD      A,8             ; 8に書き換える
+          LD      (IX+13),A       ; 保存
+          RET                     ; 復帰
+          CP      8               ; 8かチェック
           JR      NZ,$+8
-          LD      A,8
+          LD      A,6             ; 6に書き換え
           LD      (IX+13),A
           RET
-          CP      8
-          JR      NZ,$+8
-          LD      A,6
-          LD      (IX+13),A
-          RET
-          XOR     A
-          LD      (IX+0),A
-          RET
-          ;
-S1COREPT: DEFB    6,0
-          DEFB      0,-24,  0
+;          XOR     A               ; それ以外
+;          LD      (IX+0),A        ; オブジェクト消去
+;          RET
+
+;--- ボスコア 形状データ ---
+S1COREPT: DEFB    6,0             ; 頂点数6
+          DEFB      0,-24,  0     ; 頂点相対座標（コア）
           DEFB      0, 24,  0
           DEFB      0,  0,-13
           DEFB    -14,  0,  0
           DEFB      0,  0, 13
           DEFB     13,  0,  0
-          DEFB    1,4,2,6,1,0,5,4,3,6,5,0
+          DEFB    1,4,2,6,1,0,5,4,3,6,5,0 ; 線引き定義
           DEFB    1,3,2,5,1,0,0
+          
+;--- ボス戦セクション ---
+S1BOSS:   CALL    DSET            ; ボス警告表示
+          DEFW    S1ATACKM,MHYOUJ ; "ATTACK"
+          DEFB    9,16,1,1,0      ; 座標
+          DEFB    68,80,0,00100101B ; 属性
+          LD      A,17            ; 17フレーム待機
+          CALL    MAIN            ; 
+          CALL    CLSPRI          ; オブジェクトワークエリア全消去
           ;
-S1ATACKM: DEFB    'A',20,0,'T',40,0,'A',60,0,'C',80,0,'K',100,0,0
-S1CLEARM: DEFB    'C',60,30,'L',75,30,'E',90,30,'A',105,30,'R',120,30,0
-S1BONUSM: DEFB    'B',88,30,'O',108,30,'N',128,30,'U',148,30,'S',168,30,0
-S1SCOREM: DEFB    '1',98,60,'0',113,60,'0',128,60,'0',142,60
-          DEFB    '1',98,90,'U',113,90,'P',128,90,0
+          ; ボス本体・パーツの組み立て
+          CALL    DSET            ; コアオブジェクト生成
+          DEFW    S1COREPT,S1BOSMV2 ; コア形状と移動ルーチン
+          DEFB    128,128,230     ; X, Y, Z初期位置
+          DEFB    0,0,0,9,9,00000000B ; 各種フラグ
+          CALL    DSET            ; アーム1オブジェクト生成
+          DEFW    S1BOSSPT,S1BOSMV1 ; アーム形状と移動ルーチン1
+          DEFB    128,128,230     ; X, Y, Z初期位置
+          DEFB    0,0,0,5,8,00000000B ; フラグ
+          CALL    DSET            ; アーム2オブジェクト生成
+          DEFW    S1BOSSPT,S1BOSMV2 ; アーム形状と移動ルーチン2
+          DEFB    128,128,230     ; X, Y, Z
+          DEFB    8,0,0,5,8,00000000B ; フラグ
+          ;
+S1LOOP8:  LD      A,1             ; ボス戦中のメインループ
+          CALL    MAIN            ; 更新
+          LD      A,(PORIDAT)     ; ボスの生存フラグを取得
+          OR      A               ; 0（撃破）かチェック
+          JR      NZ,S1LOOP8      ; まだ生きていればループ継続
+          ;   
+          ; ボス撃破後の自機HOME帰還処理
+          LD      HL,HOME         ; 帰還ルーチンのアドレス
+          LD      (MASTER+5),HL   ; プレイヤー移動ルーチンをHOMEに書き換え
+S1LOOP9:  LD      A,1             ; 帰還演出ループ
+          CALL    MAIN            ; 画面更新
+          LD      A,(MASTER+1)    ; 自機状態フラグ取得
+          OR      A               ; 帰還完了かチェック
+          JR      NZ,S1LOOP9      ; 完了まで待機
+          
+          ;--- ステージクリア リザルト演出 ---
+          CALL    DSET            ; 「ZONE 1」再表示
+          DEFW    S1STAGM1,MHYOUJ
+          DEFB    10,24,0,0,0,38,8
+          DEFB    0,00000101B
+          CALL    DSET            ; 「CLEAR」表示
+          DEFW    S1CLEARM,MHYOUJ
+          DEFB    10,24,0,0,0,38,134
+          DEFB    0,00000101B
+          LD      A,28            ; 28フレーム表示維持
+          CALL    MAIN
+          CALL    DSET            ; 「BONUS」表示
+          DEFW    S1BONUSM,MHYOUJ
+          DEFB    10,24,0,0,0,0,55
+          DEFB    0,00000101B
+          CALL    DSET            ; 「1000」などのスコア表示
+          DEFW    S1SCOREM,MHYOUJ
+          DEFB    10,24,0,0,0,8,80
+          DEFB    0,00010101B
+          
+          LD      HL,(SCORE)      ; 現在のスコアを取得
+          LD      DE,1000         ; 1000点加算
+          ADD     HL,DE           ; 足し算
+          JR      NC,$+5          ; オーバーフロー（桁あふれ）してなければスキップ
+          LD      HL,65535        ; あふれていたら最大値で固定
+          LD      (SCORE),HL      ; スコア保存
+          
+          LD      A,(STOCK)       ; 残機（ストック）を取得
+          INC     A               ; +1 (1UP)
+          CP      10              ; 10機以上か？
+          JR      C,$+4           ; 10未満ならスキップ
+          LD      A,9             ; 10以上なら最大値9で固定
+          LD      (STOCK),A       ; 残機保存
+          
+          LD      A,30            ; 30フレーム待機
+          CALL    MAIN
+          CALL    FADE            ; 画面フェードアウト
+          LD      A,24            ; 24フレーム待機
+          CALL    MAIN
+          CALL    SDOFF           ; サウンド全停止
+          RET                     ; 呼び出し元へ戻り、次のステージへ
 
+
+;--- テキストメッセージ用キャラクタデータ ---
+S1ATACKM: DEFB    'A',20,0,'T',40,0,'A',60,0,'C',80,0,'K',100,0,0 ; "ATTACK"
+S1CLEARM: DEFB    'C',60,30,'L',75,30,'E',90,30,'A',105,30,'R',120,30,0 ; "CLEAR"
+S1BONUSM: DEFB    'B',88,30,'O',108,30,'N',128,30,'U',148,30,'S',168,30,0 ; "BONUS"
+S1SCOREM: DEFB    '1',98,60,'0',113,60,'0',128,60,'0',142,60 ; "1000"
+          DEFB    '1',98,90,'U',113,90,'P',128,90,0 ; "1UP"
 
 ;-----------------------------------------------------------
 ;
 ; STAGE 2
 ;
 ;-----------------------------------------------------------
-;
-;---- STAGE2 PROGRAM ----
-;
-STAGE2:   CALL    CLSPRI
-		  LD	  (STACK),SP
-          LD      A,00001000B
-          LD      (SWHICH),A
-          CALL    DSET
-          DEFW    S2STAGM1,MHYOUJ
-          DEFB    12,40,0,0,0,44
-          DEFB    0,0,00010101B
-          CALL    DSET
-          DEFW    S2STAGM2,MHYOUJ
-          DEFB    12,40,0,0,0,26
-          DEFB    50,0,00000101B
-          CALL    UNFADE
-          LD      A,32
-          CALL    MAIN
-          CALL    FADE
-          LD      A,8
-          CALL    MAIN
-          CALL    MSSTR
+;--- ステージ2 開始初期化ルーチン ---
+STAGE2:   CALL    CLSPRI          ; オブジェクトワークエリア全消去
+          LD      (STACK),SP      ; 現在のスタックポインタを退避
+          LD      A,00001000B     ; 画面制御用ビットパターン
+          LD      (SWITCH),A      ; 設定をワークエリアに書き込み
           ;
-S2CONT:   CALL	  MOVESD
-		  LD      HL,S2STAGD1
-          LD      DE,SCROLL
-          LD      BC,9
-          LDIR
-          LD      HL,S2JPDAT1
-          LD      DE,JPTUCH
-          LD      BC,32
-          LDIR
-          LD      A,24
-          CALL    MAIN
-         
-          LD      B,128
-S2LOOP:   LD      HL,S2RETLOP
-          PUSH    HL
-          CALL    TURBO
-          CALL    CURE
-          LD      A,B
-          CP      64
-          JP      Z,S2CHARA2
-          JR      C,S2J1
-          CALL    RND
-          CP      100
-          JP      C,S2CHARA3
-          CP      150
-          JP      C,S2CHARA6
-          CP      180
-          JP      C,TECHNO
-          CP      215
-          JP      C,PARTY
-          RET
+          CALL    DSET            ; 「ZONE 2」文字表示オブジェクト生成
+          DEFW    S2STAGM1,MHYOUJ ; 文字データと表示ルーチンを指定
+          DEFB    12,40,0,0,0,44  ;
+          DEFB    0,0,00010101B   ; 
           ;
-S2J1:     CP      48
-          RET     NC
-          CP      40
-          JP      NC,S2CHARA4
-          CP      32
-          JP      NC,S2CHARA5
-          CP      28
-          RET     NC
-          CP      20
-          JP      Z,S2CHARA2
-          JP      NC,S2CHARA1
-          POP     HL
+          CALL    DSET            ; 「FOREST」文字表示オブジェクト生成
+          DEFW    S2STAGM2,MHYOUJ ; 文字データと表示ルーチンを指定
+          DEFB    12,40,0,0,0,26  ;
+          DEFB    50,0,00000101B  ;
           ;
-S2RETLOP: CALL    RND
-          AND     3
-          ADD     A,2
-          CALL    MAIN
-          DJNZ    S2LOOP
+          CALL    UNFADE          ; 画面を徐々に明るくする（フェードイン）
+          LD      A,32            ; 32フレームMAINを実行
+          CALL    MAIN            ; 
+          CALL    FADE            ; 画面を徐々に暗くする（フェードアウト）
+          LD      A,8             ; 8フレームMAINを実行
+          CALL    MAIN            ; 
+          CALL    MSSTR           ; 自機オブジェクト出現ルーチン
           ;
-          LD      A,(SWHICH)
-          AND     11111110B
-          LD      (SWHICH),A
-          LD      HL,S2CONT2
-          LD      (CONTRT),HL
-S2CONT2:  CALL	  MOVESD
-		  LD      A,24
-          CALL    MAIN
-          LD      B,192
-S2LOOP2:  CALL    TURBO
-          CALL    CURE
-          LD      HL,S2RETLP3
-          PUSH    HL
-          CALL    RND
-          CP      80
-          JP      C,S2CHARA3
-          CP      110
-          JP      C,S2CHARA6
-          CP      135
-          JP      C,S2CHARA4
-          CP      145
-          JP      C,S2CHARA5
-          CP      155
-          JP      C,S2CHARA1
-          CP      190
-          JP      C,TECHNO
-          CP      220
-          JP      C,PARTY
-          POP     HL
-S2RETLP3: LD      A,B
-          RLCA
-          RLCA
-          AND     3
-          ADD     A,2
-          CALL    MAIN
-          DJNZ    S2LOOP2
-          LD      A,32
-          CALL    MAIN
-          JP      S2BOSS
-;
-; STAGE2 DATA
-;
-S2STAGD1: DEFB    32,5,12,2
-          DEFB    01011011B
-          DEFW    S2CONT,DEAD
+;--- ステージ進行メインスクロール設定 ---
+S2CONT:   CALL    MOVESD          ; 移動サウンドコール
+          LD      HL,S2STAGD1     ; ステージ2の基本データのアドレス
+          LD      DE,SCROLL       ; ワークエリアのアドレス
+          LD      BC,9            ; データ長9バイト
+          LDIR                    ; データを一気に転送
+          LD      HL,S2JPDAT1     ; ステージ2用の当たり判定ジャンプテーブル
+          LD      DE,JPTUCH       ; 当たり判定ワークエリア
+          LD      BC,32           ; テーブル長32バイト
+          LDIR                    ; テーブルを転送して判定を切り替え
+          LD      A,24            ; 24フレームMAINを実行
+          CALL    MAIN            ; 
           ;
-S2JPDAT1: DEFW    TUCH0,TUCH1
-          DEFW    TUCH2,TUCH3
+          LD      B,128           ; 前半戦の敵出現ループ回数を128に設定
+S2LOOP:   LD      HL,S2RETLOP     ; ループの戻り先アドレスをHLにロード
+          PUSH    HL              ; スタックに積む（RET命令でここに戻るようにする技法）
+          CALL    TURBO           ; ターボアイテム作成ルーチンコール
+          CALL    CURE            ; 回復アイテム作成ルーチンコール
+          LD      A,B             ; 現在のループカウンタをAにロード
+          CP      64              ; カウンタが64か？（ステージ中間地点）
+          JP      Z,S2CHARA2      ; 64なら敵2（十字架）を強制的に出す
+          JR      C,S2J1          ; 64未満（後半）ならS2J1の出現分岐へ
+          CALL    RND             ; 乱数を取得
+          CP      100             ; 乱数が100未満（約40%）なら
+          JP      C,S2CHARA3      ; 敵3（木）を出す
+          CP      150             ; 150未満なら
+          JP      C,S2CHARA6      ; 敵6（直進する鳥）を出す
+          CP      180             ; 180未満なら
+          JP      C,TECHNO        ; テクノイト作成
+          CP      215             ; 215未満なら
+          JP      C,PARTY         ; 人間かキャンプを作成
+          RET                     ; 乱数が高ければ何も出さずに戻る
+          ;
+;--- 前半ループ内の細かい条件分岐 ---
+S2J1:     CP      48              ; 残りカウンタが48以上か？
+          RET     NC              ; 48以上なら何もせず戻る
+          CP      40              ; 40以上なら
+          JP      NC,S2CHARA4     ; 敵4（旋回する鳥）を出す
+          CP      32              ; 32以上なら
+          JP      NC,S2CHARA5     ; 敵5（上下動する鳥）を出す
+          CP      28              ; 28以上なら
+          RET     NC              ; 何もせず戻る
+          CP      20              ; 20ちょうどか？
+          JP      Z,S2CHARA2      ; 20なら敵2（十字架）を出す
+          JP      NC,S2CHARA1     ; 21-27なら敵1（鳥型）を出す
+          POP     HL              ; 全条件から漏れたらPUSHしたアドレスを破棄
+          ;
+;--- ループ内の待機・更新処理 ---
+S2RETLOP: CALL    RND             ; 乱数を取得
+          AND     3               ; 下位2ビットのみ残す（0?3）
+          ADD     A,2             ; 2を足して、2?5フレームのウェイトを作る
+          CALL    MAIN            ; 指定フレーム分、画面を更新
+          DJNZ    S2LOOP          ; Bレジスタを減らして0でなければS2LOOPへ
+          ;
+          LD      A,(SWITCH)      ; 表示フラグ読み込み
+          AND     11111110B       ; 地平線をオフにする
+          LD      (SWITCH),A      ; 更新
+          LD      HL,S2CONT2      ;「後半」のアドレスを
+          LD      (CONTRT),HL     ; コンティニュー先として保存
+          ;
+;--- ステージ後半：ラッシュ演出 ---
+S2CONT2:  CALL    MOVESD          ; 移動サウンドコール（コンティニュー用）
+          LD      A,24            ; 24フレームMAINを実行
+          CALL    MAIN            ; 
+          LD      B,192           ; 後半ループは長めの192回
+S2LOOP2:  CALL    TURBO           ; ターボアイテム作成ルーチンコール
+          CALL    CURE            ; 回復アイテム作成ルーチンコール
+          LD      HL,S2RETLP3     ; 共通戻り先アドレスをセット
+          PUSH    HL              ; スタックに積む
+          CALL    RND             ; 乱数発生
+          CP      80              ; 80未満
+          JP      C,S2CHARA3      ; 敵3
+          CP      110             ; 110未満
+          JP      C,S2CHARA6      ; 敵6
+          CP      135             ; 135未満
+          JP      C,S2CHARA4      ; 敵4
+          CP      145             ; 145未満
+          JP      C,S2CHARA5      ; 敵5
+          CP      155             ; 155未満
+          JP      C,S2CHARA1      ; 敵1
+          CP      190             ; 190未満
+          JP      C,TECHNO        ; テクノイト
+          CP      220             ; 220未満
+          JP      C,PARTY         ; 人間かキャンプ
+          POP     HL              ; 該当なしならスタックからアドレスを捨てる
+S2RETLP3: LD      A,B             ; Bレジスタ（残りループ数）をAに
+          RLCA                    ; 2倍
+          RLCA                    ; 4倍（カウンタに応じてウェイトを変化させる演出）
+          AND     3               ; 0?3に制限
+          ADD     A,2             ; 2を足してウェイト
+          CALL    MAIN            ; Aの回数MAIN実行
+          DJNZ    S2LOOP2         ; ループ継続
+          ;
+          LD      A,32            ; 32フレームMAIN実行（ボス直前の待ち）
+          CALL    MAIN            ; 
+          JP      S2BOSS          ; ボス戦ルーチンへ
+
+;--- ステージ2 固定データセクション ---
+S2STAGD1: DEFB    32,5,12,2       ; スクロールスピードや色等の設定
+          DEFB    01011011B       ; 各種制御フラグ
+          DEFW    S2CONT,DEAD     ; 復帰用アドレスと死亡時アドレス
+
+S2JPDAT1: DEFW    TUCH0,TUCH1     ; 当たり判定時のジャンプ先リスト
+          DEFW    TUCH2,TUCH3     ; ジャンプテーブル本体
           DEFW    TUCH4,TUCH5
           DEFW    TUCH6,TUCH6
-          DEFW    TUCH27,TUCH28
+          DEFW    TUCH27,TUCH28   ; ステージ2特有の当たり判定（ボス用）
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
-          ;
-S2STAGM1: DEFB    'Z',60,80
+
+S2STAGM1: DEFB    'Z',60,80       ; 「ZONE 2」の各文字と表示座標(X, Y)
           DEFB    'O',75,80
           DEFB    'N',90,80
           DEFB    'E',105,80
-          DEFB    '2',120,80,0
-S2STAGM2: DEFB    'F',30,80
+          DEFB    '2',120,80,0    ; 終端の0
+S2STAGM2: DEFB    'F',30,80       ; 「FOREST」の文字と表示座標
           DEFB    'O',60,80
           DEFB    'R',90,80
           DEFB    'E',120,80
           DEFB    'S',150,80
-          DEFB    'T',180,80,0
-;
-; STAGE 2 -- CHARACTER 1
-;
-S2CHARA1: CALL    RND
-          AND     127
-          ADD     A,90
-          LD      (S2CHARD1+4),A
-          CALL    DSET
-S2CHARD1: DEFW    S2CHPD11,S2CHARP1
-          DEFB    0,225,245,0,0,0
-          DEFB    13,1,00000000B
+          DEFB    'T',180,80,0    ; 終端の0
+
+;-----------------------------------------------------------
+; 敵1：鳥型機 (S2CHARA1) の生成
+;-----------------------------------------------------------
+S2CHARA1: CALL    RND             ; 乱数発生
+          AND     127             ; 127までに制限
+          ADD     A,90            ; 90を足して出現X座標を決定
+          LD      (S2CHARD1+4),A  ; 出現データにX座標を直接書き込む
+          CALL    DSET            ; 敵オブジェクトを生成
+S2CHARD1: DEFW    S2CHPD11,S2CHARP1 ; 形状データアドレス, 移動ルーチンアドレス
+          DEFB    0,225,245,0,0,0 ; 座標、回転値
+          DEFB    13,1,00000000B  ; 色・属性フラグ
+          RET
+
+;--- 形状データ：羽ばたき（通常） ---
+S2CHPD11: DEFB    6,0             ; 頂点数6
+          DEFB      0,  0,-20     ; 頂点1の座標
+          DEFB    -30,-10,-10     ; 頂点2
+          DEFB     30,-10,-10     ; 頂点3
+          DEFB      0,  0, 40     ; 頂点4
+          DEFB    -10,-16,-20     ; 頂点5
+          DEFB     10,-16,-20     ; 頂点6
+          DEFB    1,2,4,3,1,4,0,5,1,6,0,0 ; 結線データ
+
+;--- 形状データ：羽ばたき（翼が上がった状態） ---
+S2CHPD12: DEFB    6,0             ; 頂点数6
+          DEFB      0,  0,-20     
+          DEFB    -20, 20,-10     ; 翼の頂点がY方向に移動している
+          DEFB     20, 20,-10     
+          DEFB      0,  0, 40     
+          DEFB    -10,-16,-20     
+          DEFB     10,-16,-20     
+          DEFB    1,2,4,3,1,4,0,5,1,6,0,0 ; 結線データ
+
+;--- アニメーション：羽ばたき処理ルーチン ---
+S2HABATA: LD      A,(IX+1)        ; ワークエリアからアニメーションタイマー取得
+          INC     (IX+1)          ; タイマーを加算
+          LD      C,A             ; 値を退避
+          LD      HL,S2CHPD11     ; 通常の形状をHLに
+          AND     2               ; タイマーのビット2をチェック（パタパタさせる）
+          JR      Z,$+5           ; ビットが立っていなければそのまま
+          LD      HL,S2CHPD12     ; ビットが立っていれば形状2（羽上げ）にする
+          LD      (IX+3),L        ; 実行中のオブジェクトの形状ポインタLを上書き
+          LD      (IX+4),H        ; 形状ポインタHを上書き（これで見た目が変わる）
+          LD      A,C             ; タイマー値を戻す
+          RET
+
+;--- 敵1：移動アルゴリズム ---
+S2CHARP1: CALL    S2HABATA        ; まず羽ばたかせる
+          CP      8               ; 生成から8フレーム経過したか？
+          JR      NC,$+11         ; 8フレーム以上なら次のフェーズへ
+          LD      A,(IX+9)        ; Z座標（奥行き）をロード
+          SUB     16              ; 16減算（高速で手前に接近）
+          LD      (IX+9),A        ; 書き戻し
+          RET
+          CP      40              ; 40フレーム経過したか？
+          JR      NC,$+21         ; 40フレーム以上なら直線移動フェーズへ
+          CALL    RTURN           ; 旋回処理呼び出し
+          DEFB    128,128,128,0,2,0 ; 旋回パラメータ
+          CALL    MOVE            ; 移動処理呼び出し
+          DEFB    -2,0,0,0,2,0    ; 横にスライドする動き
           RET
           ;
-S2CHPD11: DEFB    6,0
-          DEFB      0,  0,-20
-          DEFB    -30,-10,-10
-          DEFB     30,-10,-10
-          DEFB      0,  0, 40
-          DEFB    -10,-16,-20
-          DEFB     10,-16,-20
-          DEFB    1,2,4,3,1,4,0,5,1,6,0,0
-          ;
-S2CHPD12: DEFB    6,0
-          DEFB      0,  0,-20
-          DEFB    -20, 20,-10
-          DEFB     20, 20,-10
-          DEFB      0,  0, 40
-          DEFB    -10,-16,-20
-          DEFB     10,-16,-20
-          DEFB    1,2,4,3,1,4,0,5,1,6,0,0
-          ;
-S2HABATA: LD      A,(IX+1)
-          INC     (IX+1)
-          LD      C,A
-          LD      HL,S2CHPD11
-          AND     2
-          JR      Z,$+5
-          LD      HL,S2CHPD12
-          LD      (IX+3),L
-          LD      (IX+4),H
-          LD      A,C
+          LD      A,(IX+9)        ; 40フレーム以降の動き
+          SUB     16              ; 手前に接近
+          LD      (IX+9),A        ; 更新
           RET
-          ;
-S2CHARP1: CALL    S2HABATA
-          CP      8
-          JR      NC,$+11
-          LD      A,(IX+9)
-          SUB     16
-          LD      (IX+9),A
+;-----------------------------------------------------------
+; 敵2：十字架の生成
+;-----------------------------------------------------------
+
+S2CHARA2: CALL    RND             ; 乱数
+          AND     31              ; 0?31
+          ADD     A,112           ; 画面中央寄りに
+          LD      (S2CHARD2+4),A  ; X座標セット
+          CALL    DSET            ; 登録
+S2CHARD2: DEFW    S2CHAPD2,S2CHARP2 ; 巨大形状データ, 移動2
+          DEFB    128,128,245,0,0,0 ; 位置初期値
+          DEFB    12,2,00000010B  ; 色・属性
           RET
-          CP      40
-          JR      NC,$+21
-          CALL    RTURN
-          DEFB    128,128,128,0,2,0
-          CALL    MOVE
-          DEFB    -2,0,0,0,2,0
-          RET
-          ;
-          LD      A,(IX+9)
-          SUB     16
-          LD      (IX+9),A
-          RET
-;
-; STAGE 2 -- CHARACTER 2
-;
-S2CHARA2: CALL    RND
-          AND     31
-          ADD     A,112
-          LD      (S2CHARD2+4),A
-          CALL    DSET
-S2CHARD2: DEFW    S2CHAPD2,S2CHARP2
-          DEFB    128,128,245,0,0,0
-          DEFB    12,2,00000010B
-          RET
-          ;
-S2CHAPD2: DEFB    32,3
-          DEFB     -8,-50,  8
+
+;--- 敵2：巨大形状データ（頂点と結線の塊） ---
+S2CHAPD2: DEFB    32,3            ; 頂点数32
+          DEFB     -8,-50,  8     ; 以下、各頂点の3D座標が並ぶ
           DEFB      8,-50,  8
           DEFB      8, -8,  8
           DEFB     50, -8,  8
@@ -4335,8 +4514,7 @@ S2CHAPD2: DEFB    32,3
           DEFB    -50,  8, -8
           DEFB    -50, -8, -8
           DEFB     -8, -8, -8
-          
-          DEFB    -25,  0, -8
+          DEFB    -25,  0, -8     ; 追加パーツの頂点
           DEFB    -25,  0,  8
           DEFB    -25,  0, -8
           DEFB    -25,  0,  8
@@ -4344,545 +4522,576 @@ S2CHAPD2: DEFB    32,3
           DEFB      0, 25,  8
           DEFB      0,-25, -8
           DEFB      0,-25,  8
-         
-          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,1,0
-          DEFB    13,14,15,16,17,18,19,20,21,22,23,24,13,0
-          DEFB    1,13,0,2,14,0,3,15,0,4,16,0,5,17,0
+          DEFB    1,2,3,4,5,6,7,8,9,10,11,12,1,0 ; 輪郭1の結線順
+          DEFB    13,14,15,16,17,18,19,20,21,22,23,24,13,0 ; 輪郭2の結線順
+          DEFB    1,13,0,2,14,0,3,15,0,4,16,0,5,17,0 ; 奥行き方向の結線
           DEFB    6,18,0,7,19,0,8,20,0,9,21,0,10,22,0
-          DEFB    11,23,0,12,24,0,0
-          ;
-S2CHARP2: LD      A,(IX+13)
-          XOR     15
-          LD      (IX+13),A
-          LD      A,(IX+1)
-          INC    (IX+1)
-          CP      8
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,0,-24,2,0,0
+          DEFB    11,23,0,12,24,0,0 ; 結線終わり
+
+;--- 敵2：十字架移動アルゴリズム（サイケデリック回転）---
+S2CHARP2: LD      A,(IX+13)       ; カラー属性ロード
+          XOR     15              ; カラー値を反転させて激しく点滅させる
+          LD      (IX+13),A       ; 書き戻し
+          LD      A,(IX+1)        ; タイマー
+          INC     (IX+1)          ; 加算
+          CP      8               ; 8フレームまで
+          JR      NC,$+12         ; 
+          CALL    MOVE            ; 移動
+          DEFB    0,0,-24,2,0,0   ; 猛スピードで画面手前へ
           RET
           ;
-          CP      40
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,0,0,1,-2,-1
+          CP      40              ; 40フレームまで
+          JR      NC,$+12         ; 
+          CALL    MOVE            ; 
+          DEFB    0,0,0,1,-2,-1   ; 特殊な回転角の増分で捻るような動き
           RET
           ;
-          CP      72
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,0,0,2,1,2
+          CP      72              ; 72フレームまで
+          JR      NC,$+12         ; 
+          CALL    MOVE            ; 
+          DEFB    0,0,0,2,1,2     ; 回転軸を変えてさらに複雑に回る
           RET
           ;
-          CALL    MOVE
-          DEFB    0,0,-8,2,0,0
+          CALL    MOVE            ; それ以降
+          DEFB    0,0,-8,2,0,0    ; ゆっくり前進しながら回転維持
           RET
-;
-; STAGE 2 -- CHARACTER 3
-;
-S2CHARA3: CALL    RND
-          CP      200
-          JR      NC,$-5
-          ADD     A,25
-          LD      (S2CHARD3+4),A
-          LD      HL,S2CHRP31
-          CALL    RND
-          AND     00010100B
-          JR      Z,$+5
-          LD      HL,S2CHRP32
-          LD      (S2CHARD3+2),HL
-          CALL    DSET
-S2CHARD3: DEFW    S2CHAPD3,S2CHRP31
-          DEFB    128,225,255
-          DEFB    0,0,0,12,2,00000000B
+;-----------------------------------------------------------
+; 敵3：木の生成
+;-----------------------------------------------------------
+S2CHARA3: CALL    RND             ; 乱数
+          CP      200             ; 200以上なら
+          JR      NC,$-5          ; やり直し（出現率調整）
+          ADD     A,25            ; X座標オフセット
+          LD      (S2CHARD3+4),A  ; 書き込み
+          LD      HL,S2CHRP31     ; デフォルトで倒れるルーチン
+          CALL    RND             ; 再び乱数
+          AND     00010100B       ; 特殊ビットチェック
+          JR      Z,$+5           ; 通常ならそのまま
+          LD      HL,S2CHRP32     ; 当たりなら倒れないルーチン（急接近）
+          LD      (S2CHARD3+2),HL ; ポインタ書き換え
+          CALL    DSET            ; 木オブジェクト生成
+S2CHARD3: DEFW    S2CHAPD3,S2CHRP31 ; 形状, 移動ルーチン
+          DEFB    128,225,255     ; 初期位置
+          DEFB    0,0,0,12,2,00000000B ; パラメータ
           RET
+
+;--- 敵3：通常前方移動 ---
+S2CHRP32: LD      A,(IX+9)        ; Z座標
+          SUB     24              ; 大幅に減算して急接近
+          LD      (IX+9),A        ; 更新
+          RET
+
+;--- 敵3：木が倒れる移動 ---
+S2CHRP31: LD      A,(IX+1)        ; フェーズ確認（カウンタを利用）
+          CP      1               ; フェーズ1（倒れるモード）か？
+          JR      Z,S2CJ5         ; ならば倒れる処理へ
+          LD      A,(IX+9)        ; フェーズ0：接近中
+          SUB     24              ; 高速接近
+          LD      (IX+9),A        ; 更新
+          LD      C,A             ; Z座標を退避
+          LD      A,(MASTER+9)    ; 自機のZ座標取得
+          NEG                     ; 反転
+          ADD     A,C             ; 自機との距離計算
+          CP      60              ; 十分に近づいたか？
+          RET     NC              ; まだなら戻る
           ;
-S2CHRP32: LD      A,(IX+9)
-          SUB     24
-          LD      (IX+9),A
+          LD      A,1             ; フェーズ1へ
+          LD      (IX+1),1        ; フラグセット
           RET
-          ;
-S2CHRP31: LD      A,(IX+1)
-          CP      1
-          JR      Z,S2CJ5
-          LD      A,(IX+9)
-          SUB     24
-          LD      (IX+9),A
-          LD      C,A
-          LD      A,(MASTER+9)
-          NEG
-          ADD     A,C
-          CP      60
-          RET     NC
-          LD      A,1
-          LD      (IX+1),1
+S2CJ5:    LD      A,(IX+9)        ; 木が倒れるモード
+          SUB     16              ; 少し速度を落とす
+          LD      (IX+9),A        ; 更新
+          LD      A,(IX+7)        ; X座標取得
+          CP      128             ; 画面右半分にいるか？
+          LD      A,(IX+10)       ; 回転角をロード
+          JR      NC,S2CJ52       ; 右側なら別の回転処理へ
+          CP      8               ; 角度上限（90度）
+          RET     NC              
+          ADD     A,2             ; 回転角を加算
+          LD      (IX+10),A       ; 更新
           RET
-S2CJ5:    LD      A,(IX+9)
-          SUB     16
-          LD      (IX+9),A
-          LD      A,(IX+7)
-          CP      128
-          LD      A,(IX+10)
-          JR      NC,S2CJ52
-          CP      8
-          RET     NC
-          ADD     A,2
-          LD      (IX+10),A
+S2CJ52:   SUB     2               ; 回転角を減算（反対に倒す）
+          AND     31              ; 0?31に丸める
+          CP      24              ; 下限チェック
+          RET     C               
+          LD      (IX+10),A       ; 更新
           RET
-S2CJ52:   SUB     2
-          AND     31
-          CP      24
-          RET     C
-          LD      (IX+10),A
-          RET
-          ;
-S2CHAPD3: DEFB    10,0
-          DEFB      0,-127, 0
+
+;--- 敵3：木の形状データ ---
+S2CHAPD3: DEFB    10,0            ; 頂点10
+          DEFB      0,-127, 0     ; 巨大なスケールの頂点（拡大縮小で使う？）
           DEFB    -17,  0, 17
           DEFB     -7,  0,-23
           DEFB     23,  0,  7
-          DEFB    -11,-43,  0
+          DEFB    -11,-43,  0     ; ここから6個は当たり判定用ダミー頂点
           DEFB     -5,-43,  0
           DEFB     16,-43,  0
           DEFB     -8,-86,  0
           DEFB     -2,-86,  0
           DEFB      8,-86,  0
-          DEFB    1,2,3,1,4,2,0,4,3,0,0
-;
-; STAGE 2 -- BOSS
-;
-S2BOSS:   CALL    DSET
-          DEFW    S2ATACKM,MHYOUJ
+          DEFB    1,2,3,1,4,2,0,4,3,0,0 ; 結線
+;-----------------------------------------------------------
+; 敵4：旋回敵生成処理
+;-----------------------------------------------------------
+S2CHARA4: CALL    RND             
+          AND     127             
+          ADD     A,64            
+          LD      (S2CHARD4+4),A  
+          CALL    RND             
+          AND     31              
+          ADD     A,180           
+          LD      (S2CHARD4+5),A  
+          CALL    DSET            
+S2CHARD4: DEFW    S2CHPD11,S2CHARP4 ; 生成データ
+          DEFB    0,0,240,0,0,0   
+          DEFB    11,1,00000000B  
+          RET
+          
+;--- 敵4：旋回敵 移動ルーチン ---
+S2CHARP4: CALL    S2HABATA        ; 羽ばたき
+          CALL    RTURN           ; ぐるぐる回る
+          DEFB    128,128,128,2,0,0 
+          CALL    MOVE            ; 前進
+          DEFB    0,0,-8,2,0,0    
+          RET
+;-----------------------------------------------------------
+; 敵5：トリッキーな上下移動敵の生成
+;-----------------------------------------------------------
+S2CHARA5: CALL    RND             ; 乱数
+          LD      (S2CHARD5+4),A  ; X座標セット
+          CALL    DSET            ; 登録
+S2CHARD5: DEFW    S2CHPD11,S2CHARP5 ; 形状は敵1と同じ（鳥）、ルーチンは専用
+          DEFB    0,215,245,0,0,0 
+          DEFB    5,1,00000000B   ; 低めの耐久力
+          RET
+
+;--- 敵5：移動ルーチン ---
+S2CHARP5: CALL    S2HABATA        ; 羽ばたき
+          CP      4               ; 行動フェーズ1
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    0,-22,-8,0,2,0  ; 上へ移動
+          RET
+          ;
+          CP      8               ; フェーズ2
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    0,-22,-8,0,-2,0 ; 上移動・回転は逆回転
+          RET
+          ;
+          CP      12              ; フェーズ3
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    0,22,-8,0,-2,0  ; 下移動・逆回転
+          RET
+          ;
+          CP      16              ; フェーズ4
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    0,22,-8,0,2,0   ; 下移動・回転は戻すように
+          RET
+          ;
+          XOR     A               ; タイマーリセット
+          LD      (IX+1),A        ; 最初に戻る
+          JR      S2CHARP5
+;-----------------------------------------------------------
+; 敵6：直進敵の生成
+;-----------------------------------------------------------
+S2CHARA6: CALL    RND             
+          CP      190             
+          JR      NC,$-5          
+          ADD     A,35            
+          LD      (S2CHARD6+4),A  
+          CALL    RND             
+          CP      190             
+          JR      NC,$-5          
+          ADD     A,25            
+          LD      (S2CHARD6+5),A  
+          CALL    DSET            
+S2CHARD6: DEFW    S2CHPD11,S2CHARP6 
+          DEFB    0,0,255,0,0,0   
+          DEFB    9,1,00000000B   
+          RET
+
+;--- 敵6：移動ルーチン（ひたすら真っ直ぐ！） ---
+S2CHARP6: CALL    S2HABATA        
+          LD      A,(IX+9)        ; Z座標
+          SUB     24              ; 最高速度で接近
+          LD      (IX+9),A        
+          RET
+;-----------------------------------------------------------
+; ボス戦開始処理
+;-----------------------------------------------------------
+S2BOSS:   CALL    DSET            ; 警告メッセージ「ATTACK」表示オブジェクト生成
+          DEFW    S2ATACKM,MHYOUJ 
           DEFB    9,16,1,1,0
           DEFB    72,80,0,00100101B
-          LD      A,17
+          LD      A,17            ; 表示待ちに17フレームMAINを実行
           CALL    MAIN
-          CALL    CLSPRI
-          CALL    DSET
-          DEFW    S2COREPT,S2BOSMV2
-          DEFB    128,56,64
+          CALL    CLSPRI          ; オブジェクトワークエリア全消去
+          CALL    DSET            ; ボスの核を生成
+          DEFW    S2COREPT,S2BOSMV2 ; コア形状, コア移動
+          DEFB    128,56,64       ; 出現位置
           DEFB    0,0,0,9,9,00000000B
-          CALL    DSET
-          DEFW    S2CHPD11,S2BOSMV3
-          DEFB    128,32,64
+          CALL    DSET            ; ボスの鳥（核をもっている）を生成
+          DEFW    S2CHPD11,S2BOSMV3 ; 形状, オプション移動
+          DEFB    128,32,64       
           DEFB    0,0,0,9,8,00000010B
-          LD      HL,4005H
-          CALL    S2BOSS2
-          LD      A,8
+          LD      HL,4005H        ; 座標パラメータ1をHLにセット
+          CALL    S2BOSS2         ; ボスの周りを回る鳥の生成1
+          LD      A,8             ; 待機
           CALL    MAIN
-          LD      HL,0C00DH
-          CALL    S2BOSS2
-          LD      A,8
+          LD      HL,0C00DH       ; 
+          CALL    S2BOSS2         ; ボスの周りを回る鳥の生成2
+          LD      A,8             ; 
           CALL    MAIN
-          LD      HL,800BH
-          CALL    S2BOSS2
-S2LOOP8:  LD      A,1
-          CALL    MAIN
-          LD      A,(PORIDAT)
-          OR      A
-          JR      NZ,S2LOOP8
-          LD      HL,HOME
-          LD      (MASTER+5),HL
-S2LOOP9:  LD      A,1
-          CALL    MAIN
-          LD      A,(MASTER+1)
-          OR      A
-          JR      NZ,S2LOOP9
+          LD      HL,800BH        ; 
+          CALL    S2BOSS2         ; ボスの周りを回る鳥の生成3
           ;
-          CALL    DSET
+;--- ボス戦ループ（決着待ち） ---
+S2LOOP8:  LD      A,1             ; 1フレーム更新
+          CALL    MAIN
+          LD      A,(PORIDAT)     ; ボスの生存フラグ（コアのHP等）を確認
+          OR      A               ; 0になったか？
+          JR      NZ,S2LOOP8      ; 生きていれば継続
+          ;
+;--- ボス撃破後の自機帰還演出 ---
+          LD      HL,HOME         ; 自動帰還のアドレス
+          LD      (MASTER+5),HL   ; 自機オブジェクトの挙動を帰還ルーチンに書き換える
+S2LOOP9:  LD      A,1             ; 更新
+          CALL    MAIN
+          LD      A,(MASTER+1)    ; 帰還完了フラグチェック
+          OR      A
+          JR      NZ,S2LOOP9      ; 完了まで待機
+          ;          
+;--- ステージクリア表示とボーナス計算 ---
+          CALL    DSET            ; 「ZONE 2」表示オブジェクト生成
           DEFW    S2STAGM1,MHYOUJ
           DEFB    2,24,0,0,0,38,8
           DEFB    0,00000101B
-          CALL    DSET
+          CALL    DSET            ; 「CLEAR」表示オブジェクト生成
           DEFW    S2CLEARM,MHYOUJ
           DEFB    2,24,0,0,0,38,134
           DEFB    0,00000101B
-          LD      A,28
+          LD      A,28            ;  28フレーム表示
           CALL    MAIN
-          CALL    DSET
+          CALL    DSET            ; 「BONUS」表示オブジェクト生成
           DEFW    S2BONUSM,MHYOUJ
           DEFB    2,24,0,0,0,0,55
           DEFB    0,00000101B
-          CALL    DSET
+          CALL    DSET            ; 「SCORE」表示オブジェクト生成
           DEFW    S2SCOREM,MHYOUJ
           DEFB    2,24,0,0,0,8,80
           DEFB    0,00010101B
-          LD      HL,(SCORE)
-          LD      DE,2000
-          ADD     HL,DE
-          JR      NC,$+5
-          LD      HL,65535
-          LD      (SCORE),HL
-          LD      A,(STOCK)
-          INC     A
-          CP      10
-          JR      C,$+4
-          LD      A,9
-          LD      (STOCK),A
-          LD      A,30
+          ;
+          LD      HL,(SCORE)      ; スコア取得
+          LD      DE,2000         ; ステージクリアボーナス 2000点
+          ADD     HL,DE           ; 加算
+          JR      NC,$+5          ; 桁あふれ（オーバーフロー）しなければ次へ
+          LD      HL,65535        ; あふれたら最大値で固定
+          LD      (SCORE),HL      ; 保存
+          ;
+          LD      A,(STOCK)       ; 自機ストック数
+          INC     A               ; 1機増やす
+          CP      10              ; 10機以上になるか？
+          JR      C,$+4           ; 
+          LD      A,9             ; 最大9機までに制限
+          LD      (STOCK),A       
+          ;
+          LD      A,30            ; 終了ウェイト
           CALL    MAIN
-          CALL    FADE
-          LD      A,24
-          CALL    SDOFF
-          CALL    MAIN
+          CALL    FADE            ; 暗転
+          LD      A,24            ; 
+          CALL    SDOFF           ; サウンド停止
+          CALL    MAIN            ; 
+          RET                     ; ステージ2 全行程終了
+
+;-----------------------------------------------------------
+; サブボス敵生成ルーチン
+;-----------------------------------------------------------
+
+S2BOSS2:  LD      A,H             ; 引数の座標HをAに
+          LD      (S2BOSRD2+5),A  ; 生成データ(Y座標)を直接書き換え
+          LD      A,L             ; 引数の座標LをAに
+          LD      (S2BOSRD2+10),A ; 生成データ(属性)を直接書き換え
+          CALL    DSET            ; 部位を生成
+S2BOSRD2: DEFW    S2CHPD11,S2BOSMV ; 鳥の姿をしたボスのパーツ
+          DEFB    192,128,102,0,0,0 
+          DEFB    7,8,00000000B   
           RET
+
+;--- サブボス鳥：移動と攻撃 ---
+S2BOSMV:  LD      A,(PORIDAT)     ; ボスの核が生きているか確認
+          OR      A               
+          JR      NZ,$+9          ; コア死亡なら
+          LD      (IX+0),A        ; 自分も道連れで消滅
+          CALL    BOMBOBJ         ; 破壊オブジェクト生成
+          RET                     
+          CALL    RND             ; 乱数で攻撃判定
+          AND     31              ; 1/32の確率で
+          CALL    Z,S2FUN         ; 糞を発射
+          CALL    S2HABATA        ; アニメーション
+          CP      4               ; パーツごとの周期移動
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    0,0,-18,0,0,-2  
+          RET                     
           ;
-TUCH27:   CALL    TUCH2
-          LD      A,(MASTER+9)
-          XOR     127
-          ADD     A,17
-          LD      (MASTER+9),A
-          RET
+          CP      12              
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    -18,0,0,0,0,-1  
+          RET                     
           ;
-TUCH28:   CALL   PISTOL
-          LD     A,32
-          LD     (MASTER+8),A
-          LD     A,(IX+13)
-          CP     9
-          JR     NZ,$+8
-          LD     A,8
-          LD     (IX+13),A
-          RET
-          CP     8
-          JR     NZ,$+8
-          LD     A,6
-          LD     (IX+13),A
-          RET
-          XOR    A
-          LD     (IX+0),A
-          RET
-          ;       
-S2COREPT: DEFB    6,0
-          DEFB      0,-24,  0
-          DEFB      0, 24,  0
-          DEFB      0,  0,-13
-          DEFB    -13,  0,  0
-          DEFB      0,  0, 13
-          DEFB     13,  0,  0
-          DEFB    1,4,2,6,1,0,5,4,3,6,5,0
-          DEFB    1,3,2,5,1,0,0
+          CP      16              
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    0,0,18,0,0,-2   
+          RET                     
           ;
-S2ATACKM:  DEFB    'A',9,0,'T',32,0,'A',55,0,'C',79,0,'K',106,0,0
-S2CLEARM:  DEFB 'C',60,30,'L',75,30,'E',90,30,'A',105,30,'R',120,30,0
-S2BONUSM:  DEFB    'B',88,30,'O',108,30,'N',128,30,'U',148,30,'S',168,30,0
-S2SCOREM:  DEFB    '2',98,60,'0',113,60,'0',128,60,'0',142,60
-           DEFB    '1',98,90,'U',113,90,'P',128,90,0
-;
-; STAGE 2 -- CHARACTER 5
-;
-S2CHARA5: CALL    RND
-          LD      (S2CHARD5+4),A
-          CALL    DSET
-S2CHARD5: DEFW    S2CHPD11,S2CHARP5
-          DEFB    0,215,245,0,0,0
-          DEFB    5,1,00000000B
-          RET
+          CP      24              
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    18,0,0,0,0,-1   
+          RET                     
           ;
-S2CHARP5: CALL    S2HABATA
-          CP      4
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,-22,-8,0,2,0
-          RET
+          XOR     A               ; 移動タイマーリセット
+          LD      (IX+1),A        
+          JR      S2BOSMV         
+
+;--- ボスコア（クリスタル）：独自の上下移動ルーチン ---
+S2BOSMV2: LD      A,(IX+1)        ; タイマー
+          INC     (IX+1)          
+          CP      16              ; フェーズ1
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    0,8,0,0,0,1     ; 上へ
+          RET                     
           ;
-          CP      8
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,-22,-8,0,-2,0
-          RET
+          CP      32              ; フェーズ2
+          JR      NC,$+12         
+          CALL    MOVE            
+          DEFB    0,-8,0,0,0,1    ; 下へ
+          RET                     
           ;
-          CP      12
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,22,-8,0,-2,0
-          RET
-          ;
-          CP      16
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,22,-8,0,2,0
-          RET
-          ;
-          XOR     A
-          LD      (IX+1),A
-          JR      S2CHARP5
-;
-; STAGE 2 -- CHARACTER 4
-;
-S2CHARP4: CALL    S2HABATA
-          CALL    RTURN
-          DEFB    128,128,128,2,0,0
-          CALL    MOVE
-          DEFB    0,0,-8,2,0,0
-          RET
-          ;
-S2CHARA4: CALL    RND
-          AND     127
-          ADD     A,64
-          LD      (S2CHARD4+4),A
-          CALL    RND
-          AND     31
-          ADD     A,180
-          LD      (S2CHARD4+5),A
-          CALL    DSET
-S2CHARD4: DEFW    S2CHPD11,S2CHARP4
-          DEFB    0,0,240,0,0,0
-          DEFB    11,1,00000000B
-          RET
-;
-; STAGE 2 -- CHARACTER 6
-;
-S2CHARA6: CALL    RND
-          CP      190
-          JR      NC,$-5
-          ADD     A,35
-          LD      (S2CHARD6+4),A
-          CALL    RND
-          CP      190
-          JR      NC,$-5
-          ADD     A,25
-          LD      (S2CHARD6+5),A
-          CALL    DSET
-S2CHARD6: DEFW    S2CHPD11,S2CHARP6
-          DEFB    0,0,255,0,0,0
-          DEFB    9,1,00000000B
-          RET
-          ;
-S2CHARP6: CALL    S2HABATA
-          LD      A,(IX+9)
-          SUB     24
-          LD      (IX+9),A
-          RET
-;
-; STAGE 2 -- BOSS
-;
-S2BOSS2:  LD      A,H
-          LD      (S2BOSRD2+5),A
-          LD      A,L
-          LD      (S2BOSRD2+10),A
-          CALL    DSET
-S2BOSRD2: DEFW    S2CHPD11,S2BOSMV
-          DEFB    192,128,102,0,0,0
-          DEFB    7,8,00000000B
-          RET
-          ;
-S2BOSMV:  LD      A,(PORIDAT)
-          OR      A
-          JR      NZ,$+6
-          LD      (IX+0),A
-          RET
-          CALL    RND
-          AND     31
-          CALL    Z,S2FUN
-          CALL    S2HABATA
-          CP      4
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,0,-18,0,0,-2
-          RET
-          ;
-          CP      12
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    -18,0,0,0,0,-1
-          RET
-          ;
-          CP      16
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,0,18,0,0,-2
-          RET
-          ;
-          CP      24
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    18,0,0,0,0,-1
-          RET
-          ;
-          XOR     A
-          LD      (IX+1),A
-          JR      S2BOSMV
-          ;
-S2BOSMV2: LD      A,(IX+1)
-          INC     (IX+1)
-          CP      16
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,8,0,0,0,1
-          RET
-          ;
-          CP      32
-          JR      NC,$+12
-          CALL    MOVE
-          DEFB    0,-8,0,0,0,1
-          RET
-          ;
-          XOR     A
-          LD      (IX+1),A
-          JR      S2BOSMV2
-          ;
-S2BOSMV3: LD      A,(PORIDAT)
-          OR      A
-          JR      NZ,$+6
-          LD      (IX+0),A
-          RET
-          CALL    S2HABATA
-          CP      16
-          JR      NC,$+11
-          LD      A,(IX+8)
-          ADD     A,8
-          LD      (IX+8),A
-          RET
-          CP      32
-          JR      NC,$+11
-          LD      A,(IX+8)
-          SUB     8
-          LD      (IX+8),A
-          RET
-          XOR     A
-          LD      (IX+1),A
-          JR      S2BOSMV3
-;
-; STAGE2 BOSS - FUN
-;
-S2FUN:    LD      A,(IX+7)
-          LD      (S2FUNRD+4),A
-          LD      A,(IX+8)
-          LD      (S2FUNRD+5),A
-          LD      A,(IX+9)
-          LD      (S2FUNRD+6),A
-          CALL    DSET
-S2FUNRD:  DEFW    S2FUNPD,S2FUNMV
-          DEFB    0,0,0,0,0,0
-          DEFB    8,1,00000000B
-          RET
-          ;
-S2FUNMV:  LD      A,(IX+8)
-          ADD     A,16
-          LD      (IX+8),A
-          RET
-          ;
-S2FUNPD:  DEFB    4,0
-          DEFB     -8,  5, -5
-          DEFB      8,  5, -5
-          DEFB      0,  5,  9
-          DEFB      0, -9,  0
-          DEFB    1,2,3,1,4,2,0
-          DEFB    4,3,0,0
+          XOR     A               
+          LD      (IX+1),A        
+          JR      S2BOSMV2        
+
+;--- ボス鳥：前後スライド移動 ---
+S2BOSMV3: LD      A,(PORIDAT)     
+          OR      A               
+          JR      NZ,$+9
+          LD      (IX+0),A        
+          CALL    BOMBOBJ         ; 破壊オブジェクト生成
+          RET                     
+          CALL    S2HABATA        
+          CP      16              ; 手前へスライド
+          JR      NC,$+11         
+          LD      A,(IX+8)        
+          ADD     A,8             
+          LD      (IX+8),A        
+          RET                     
+          CP      32              ; 奥へスライド
+          JR      NC,$+11         
+          LD      A,(IX+8)        
+          SUB     8               
+          LD      (IX+8),A        
+          RET                     
+          XOR     A               
+          LD      (IX+1),A     
+          JR      S2BOSMV3        
+
+;--- ボス攻撃：糞の生成 ---
+S2FUN:    LD      A,(IX+7)        ; 親機（部位）のX座標
+          LD      (S2FUNRD+4),A   ; 弾の初期Xにセット
+          LD      A,(IX+8)        ; Y座標
+          LD      (S2FUNRD+5),A   ; 弾の初期Yにセット
+          LD      A,(IX+9)        ; Z座標
+          LD      (S2FUNRD+6),A   ; 弾の初期Zにセット
+          CALL    DSET            ; 弾オブジェクト生成
+S2FUNRD:  DEFW    S2FUNPD,S2FUNMV ; 弾の形状, 弾の移動
+          DEFB    0,0,0,0,0,0     
+          DEFB    8,1,00000000B   
+          RET                     
+
+;--- ボス攻撃：糞の移動ルーチン（直進接近） ---
+S2FUNMV:  LD      A,(IX+8)        ; Y座標ロード
+          ADD     A,16            ; 迫りくる速度で加算
+          LD      (IX+8),A        
+          RET                     
+
+;--- ボス攻撃：糞の形状データ（扇形） ---
+S2FUNPD:  DEFB    4,0             ; 頂点4
+          DEFB     -8,  5, -5     
+          DEFB      8,  5, -5     
+          DEFB      0,  5,  9     
+          DEFB      0, -9,  0     
+          DEFB    1,2,3,1,4,2,0   ; 結線1
+          DEFB    4,3,0,0         ; 結線2
           
+
+;--- ボス敵（鳥）の当たり処理 ---
+TUCH27:   CALL    TUCH2           ; 基本のダメージ判定
+          ; 自機を弾き飛ばす処理
+          LD      A,(MASTER+9)    ; 自機のZ座標
+          XOR     127             ; ビット反転（手前と奥を入れ替えるような演出）
+          ADD     A,17            ; 位置微調整
+          LD      (MASTER+9),A    ; 強制書き換え
+          RET
+
+;--- ボス敵（クリスタル）の当たり判定処理 ---
+TUCH28:   CALL    PISTOL          ; 被弾音
+          LD      A,32            ; ダメージパラメータ
+          LD      (MASTER+8),A    
+          LD      A,(IX+13)       ; 敵のカラーロード
+          CP      9               ; カラー9か？（ライフ2）
+          JR      NZ,$+8          ; 
+          LD      A,8             ; カラー8にランクダウン
+          LD      (IX+13),A       
+          RET
+          CP      8               ; カラー8か？（ライフ1）
+          JR      NZ,$+8          
+          LD      A,6             ; カラー6にランクダウン
+          LD      (IX+13),A       
+          RET
+          XOR     A               ; それ以外なら（3回目で）
+          LD      (IX+0),A        ; オブジェクト消滅
+          CALL    BOMBOBJ         ; 破壊オブジェクト生成
+          RET
+
+;--- ボスコア：形状データ（多面体コア） ---
+S2COREPT: DEFB    6,0             
+          DEFB      0,-24,  0     
+          DEFB      0, 24,  0     
+          DEFB      0,  0,-13     
+          DEFB    -13,  0,  0     
+          DEFB      0,  0, 13     
+          DEFB     13,  0,  0     
+          DEFB    1,4,2,6,1,0,5,4,3,6,5,0 ; 表側の結線
+          DEFB    1,3,2,5,1,0,0           ; 裏側の結線
+
+;--- テキストメッセージ定義 ---
+S2ATACKM: DEFB    'A',9,0,'T',32,0,'A',55,0,'C',79,0,'K',106,0,0
+S2CLEARM: DEFB    'C',60,30,'L',75,30,'E',90,30,'A',105,30,'R',120,30,0
+S2BONUSM: DEFB    'B',88,30,'O',108,30,'N',128,30,'U',148,30,'S',168,30,0
+S2SCOREM: DEFB    '2',98,60,'0',113,60,'0',128,60,'0',142,60
+          DEFB    '1',98,90,'U',113,90,'P',128,90,0
+
 ;-----------------------------------------------------------
 ;
 ; STAGE 3
 ;
 ;-----------------------------------------------------------
-;
-;---- STAGE3 PROGRAM ----
-;
-STAGE3:   CALL    CLSPRI
-		  LD      (STACK),SP
-          LD      A,00001000B
-          LD      (SWHICH),A
-          CALL    DSET
-          DEFW    S3STAGM1,MHYOUJ
-          DEFB    7,40,0,0,0,44
-          DEFB    0,0,00010101B
-          CALL    DSET
-          DEFW    S3STAGM2,MHYOUJ
-          DEFB    7,40,0,0,0,46
-          DEFB    55,0,00000101B
-          CALL    UNFADE
-          LD      A,32
-          CALL    MAIN
-          CALL    FADE
-          LD      A,8
-          CALL    MAIN
-          CALL    MSSTR  
+
+STAGE3:   CALL    CLSPRI        ; 全オブジェクトワークエリア全消去
+          LD      (STACK),SP    ; 現在のスタックポインタを保存
+          LD      A,00001000B   ; 特定のフラグ（ビット3）を立てる
+          LD      (SWITCH),A    ; ワークエリア(SWITCH)に設定値を保存
+          CALL    DSET          ; 表示セットアップルーチン呼び出し
+          DEFW    S3STAGM1,MHYOUJ ; 「ZONE 3」の表示データとルーチンを指定
+          DEFB    7,40,0,0,0,44 ; 色(7)、座標(40,44)などのパラメータ
+          DEFB    0,0,00010101B ; 表示属性フラグ
+          CALL    DSET          ; 続いてステージ名のセットアップ
+          DEFW    S3STAGM2,MHYOUJ ; 「ICE LAND」の表示データ
+          DEFB    7,40,0,0,0,46 ; 表示座標（ZONE3の少し下）
+          DEFB    55,0,00000101B; 表示属性フラグ
+          CALL    UNFADE        ; 徐々に画面を明るくする
+          LD      A,32          ; タイトル表示用の待ち時間をセット
+          CALL    MAIN          ; 32フレームMAINを回して待ち
+          CALL    FADE          ; 画面を徐々に暗くしてゲーム本編へ
+          LD      A,8           ; 短い待ち時間をセット
+          CALL    MAIN          ; 8フレームMAINを回す
+          CALL    MSSTR         ; 自機の表示開始
           ;
-S3CONT:   CALL	  MOVESD
-		  LD      HL,S3STAGD1
-          LD      DE,SCROLL
-          LD      BC,9
-          LDIR
-          LD      HL,S3JPDAT1
-          LD      DE,JPTUCH
-          LD      BC,32
-          LDIR
-          LD      A,24
-          CALL    MAIN
-          LD      B,192
-S3LOOP:   LD      HL,S3RETLOP
-          PUSH    HL
-          CALL    CURE
-          CALL    TURBO
-          CALL    RND
-          CP      40
-          CALL    C,TECHNO
-          CALL    RND
-          CP      30
-          CALL    C,PARTY
-          LD      A,B
-          CP      160
-          JR      C,S3SJ1
-          CALL    S3CHARA1
-          JP      S3CHARA6
+          ; 前半戦セクション
+S3CONT:   CALL    MOVESD        ; エンジンサウンドコール
+          LD      HL,S3STAGD1   ; ステージの設定データの先頭を指定
+          LD      DE,SCROLL     ; システムのワークエリア
+          LD      BC,9          ; 9バイト分
+          LDIR                  ; 設定データを一括転送
+          LD      HL,S3JPDAT1   ; 当たり判定用データの先頭を指定
+          LD      DE,JPTUCH     ; システムの当たり判定ポインタワークエリア
+          LD      BC,32         ; 32バイト分
+          LDIR                  ; 判定データを一括転送
+          LD      A,24          ; 24フレームMAINを実行して待ち
+          CALL    MAIN          ; 
+          LD      B,192         ; ステージ進捗カウンタ（192回ループ）をセット
+S3LOOP:   LD      HL,S3RETLOP   ; ループの戻り先アドレスをHLに格納
+          PUSH    HL            ; スタックに積んでRETでS3RETLOPに戻れるようにする
+          CALL    CURE          ; 回復アイテム作成ルーチンコール
+          CALL    TURBO         ; ターボアイテム作成ルーチンコール
+          CALL    RND           ; 乱数を取得
+          CP      40            ; 40未満なら
+          CALL    C,TECHNO      ; テクノイト作成ルーチンコール
+          CALL    RND           ; 乱数を取得
+          CP      30            ; 30未満なら
+          CALL    C,PARTY       ; キャンプか人の作成ルーチンコール
+          LD      A,B           ; 現在の進捗カウンタをAへ
+          CP      160           ; 160以上（ステージ序盤）か判定
+          JR      C,S3SJ1       ; 160未満なら中盤処理へ分岐
+          CALL    S3CHARA1      ; 序盤の敵キャラ1を生成
+          JP      S3CHARA6      ; 序盤の敵キャラ6を生成してループへ
           ;
-S3SJ1:    CP      90
-          JR      C,S3SJ2
-          CALL    RND
-          CP      120
-          CALL    C,S3CHARA1
-          CALL    RND
-          CP      100
-          JP      C,S3CHARA6
-          CP      180
-          JP      C,S3CHARA3
-          JP      S3CHARA4
+S3SJ1:    CP      90            ; ステージ中盤（90?159）か判定
+          JR      C,S3SJ2       ; 90未満なら終盤処理へ分岐
+          CALL    RND           ; 乱数取得
+          CP      120           ; 120未満なら
+          CALL    C,S3CHARA1    ; 敵キャラ1を生成
+          CALL    RND           ; 乱数取得
+          CP      100           ; 100未満なら
+          JP      C,S3CHARA6    ; 敵キャラ6を生成
+          CP      180           ; 180未満なら
+          JP      C,S3CHARA3    ; 敵キャラ3を生成
+          JP      S3CHARA4      ; それ以外は敵キャラ4を生成
           ;
-S3SJ2:    CP      15
-          JR      C,S3SJ3
-          AND     15
-          CALL    Z,S3CHARA5
-          CALL    RND
-          CP      100
-          CALL    C,S3CHARA1
-          CALL    RND
-          CP      60
-          JP      C,S3CHARA6
-          CP      120
-          JP      C,S3CHARA3
-          CP      180
-          JP      C,S3CHARA4
-          CP      190
-          JP      C,S3CHARA2
-          RET
+S3SJ2:    CP      15            ; ステージ終盤（15?89）か判定
+          JR      C,S3SJ3       ; 15未満ならボス直前へ
+          AND     15            ; Aの下位4ビット（16回に1回の周期）
+          CALL    Z,S3CHARA5    ; 周期的に敵キャラ5を生成
+          CALL    RND           ; 乱数取得
+          CP      100           ; 
+          CALL    C,S3CHARA1    ; 100未満なら敵キャラ1を作成
+          CALL    RND           ; 乱数取得
+          CP      60            ; 
+          JP      C,S3CHARA6    ; 60未満なら敵キャラ6を作成
+          CP      120           ; 
+          JP      C,S3CHARA3    ; 120未満なら敵キャラ3を作成
+          CP      180           ; 
+          JP      C,S3CHARA4    ; 180未満なら敵キャラ4を作成
+          CP      190           ; 
+          JP      C,S3CHARA2    ; 190未満なら敵キャラ2を作成
+          RET                   ; 戻り先(S3RETLOP)へ戻る
           ;
-S3SJ3:    CP      14
-          CALL    Z,S3CHARA8
-          RET
+S3SJ3:    CP      14            ; カウントが残り14ちょうどか判定
+          CALL    Z,S3CHARA8    ; 14の瞬間だけ特定の敵（バキュラ系）を出す
+          RET                   ; 戻り先(S3RETLOP)へ戻る
           ;
-S3RETLOP: LD      A,4
-          CALL    MAIN
-          DJNZ    S3LOOP
+S3RETLOP: LD      A,4           ; 4フレーム待機してウェイトをかける
+          CALL    MAIN          ; メインループ実行
+          DJNZ    S3LOOP        ; Bをデクリメントし、0でなければS3LOOPへ
           ;
-          LD      A,(SWHICH)
-          AND     11111110B
-          LD      (SWHICH),A
-          LD      HL,S3CONT2
-          LD      (CONTRT),HL
+          ; 後半戦開始前処理
+          LD      A,(SWITCH)    ; スイッチの状態を取得
+          AND     11111110B     ; 地平線を消す
+          LD      (SWITCH),A    ; 更新
+          LD      HL,S3CONT2    ; 次の復活ポイントアドレスをセット
+          LD      (CONTRT),HL   ; 
           ;
-S3CONT2:  CALL	  MOVESD
-		  LD      A,32
-          CALL    MAIN
-          LD      B,192
-S3LOOP2:  CALL    TURBO
-          CALL    CURE
-          LD      HL,S3RETLP2
-          PUSH    HL
-          LD      A,B
-          AND     31
-          JP      Z,S3CHARA8
-          CALL    RND
-          CP      80
+          ; 後半戦セクション
+S3CONT2:  CALL    MOVESD        ; エンジンサウンドコール
+          LD      A,32          ; 32フレームMAINを回して待ち
+          CALL    MAIN          ; 
+          LD      B,192         ; 第2フェーズのループカウンタをリセット
+S3LOOP2:  CALL    TURBO         ; ターボアイテム作成ルーチンコール
+          CALL    CURE          ; 回復アイテム作成ルーチンコール
+          LD      HL,S3RETLP2   ; 戻り先アドレスをセット
+          PUSH    HL            ; スタックへ積む
+          LD      A,B           ; 現在のカウントをAへ
+          AND     31            ; 32回周期のタイミングかチェック
+          JP      Z,S3CHARA8    ; 周期的に敵キャラ8を出現させる
+          CALL    RND           ; 以下、怒涛の敵生成ラッシュ
+          CP      80            ; 各キャラの出現率をCP命令で細かく制御
           CALL    C,S3CHARA1
           CALL    RND
           CP      70
@@ -4901,26 +5110,27 @@ S3LOOP2:  CALL    TURBO
           JP      C,PARTY
           CP      248
           JP      C,S3CHARA5
-          RET
+          RET                   ; 戻り先(S3RETLP2)へ
           ;
-S3RETLP2: LD      A,B
+S3RETLP2: LD      A,B           ; ループ進捗に応じた可変ウェイト処理
+          RLCA                  ; Aを左回転（ビット操作で数値を加工）
           RLCA
-          RLCA
-          AND     3
-          ADD     A,3
-          CALL    MAIN
-          DJNZ    S3LOOP2
-          LD      A,32
-          CALL    MAIN
-          JP      S3BOSS
-;
-; STAGE3 DATA
-;
-S3STAGD1: DEFB    32,5,5,2
-          DEFB    01011011B
-          DEFW    S3CONT,DEAD
+          AND     3             ; 下位2ビットのみ抽出(0?3)
+          ADD     A,3           ; 3を足して3?6フレームの待機にする
+          CALL    MAIN          ; 実行（これにより敵キャラが適度にばらけるように）
+          DJNZ    S3LOOP2       ; カウント終了までループ
           ;
-S3JPDAT1: DEFW    TUCH0,TUCH1
+          LD      A,32          ; ボス突入前のウェイト(32フレーム）
+          CALL    MAIN          ; 実行
+          JP      S3BOSS        ; ボス戦ルーチンへ突入（実際にはボスはいない）
+;-----------------------------------------------------------
+; STAGE 3 各種設定データ
+;-----------------------------------------------------------
+S3STAGD1: DEFB    32,5,5,2      ; 背景や速度の設定値
+          DEFB    01011011B     ; ステージ属性のフラグ群（SWITCH)
+          DEFW    S3CONT,DEAD   ; コンティニューアドレスとゲームオーバー処理アドレス
+          ;
+S3JPDAT1: DEFW    TUCH0,TUCH1   ; STAGE3専用当たり判定処理のポインタ
           DEFW    TUCH2,TUCH3
           DEFW    TUCH4,TUCH5
           DEFW    TUCH6,TUCH6
@@ -4929,47 +5139,50 @@ S3JPDAT1: DEFW    TUCH0,TUCH1
           DEFW    TUCH0,TUCH0
           DEFW    TUCH0,TUCH0
           ;
-S3STAGM1: DEFB    'Z',60,80
-          DEFB    'O',75,80
-          DEFB    'N',90,80
-          DEFB    'E',105,80
-          DEFB    '3',120,80,0
-S3STAGM2: DEFB    'I',30,80
+S3STAGM1: DEFB    'Z',60,80      ; 文字'Z'、座標X=60, Y=80
+          DEFB    'O',75,80      ; 文字'O'
+          DEFB    'N',90,80      ; 文字'N'
+          DEFB    'E',105,80     ; 文字'E'
+          DEFB    '3',120,80,0   ; 文字'3'、終端
+          ;
+S3STAGM2: DEFB    'I',30,80      ; ステージ名 "ICE ISLAND" の各文字定義
           DEFB    'C',45,80
           DEFB    'E',60,80
           DEFB    'L',90,80
           DEFB    'A',105,80
           DEFB    'N',120,80
           DEFB    'D',135,80,0
-;
-; STAGE 3 -- CHARACTER 1
-;
-S3CHARA1: CALL    RND
-          LD      (S3CHARD1+4),A
-          CALL    RND
-          AND     31
-          LD      (S3CHARD1+5),A
-          LD      HL,S3CHARP1
-          AND     1
-          JR      Z,$+5
-          LD      HL,S3CHRP12
-          LD      (S3CHARD1+2),HL
-          CALL    DSET
-S3CHARD1: DEFW    S3CHAPD1,S3CHARP1
-          DEFB    0,20,255,0,0,0
-          DEFB    7,1,00000000B
+;-----------------------------------------------------------
+; 敵キャラ1 つらら、（分岐しているが、もう一方は画面外で消えているよう）
+;-----------------------------------------------------------
+S3CHARA1: CALL    RND           ; 乱数を発生
+          LD      (S3CHARD1+4),A ; X座標をランダムに決定
+          CALL    RND           ; 再び乱数
+          AND     31            ; 0?31の範囲に限定
+          LD      (S3CHARD1+5),A ; Y座標をランダムに決定
+          LD      HL,S3CHARP1   ; 基本移動パターンを指定
+          AND     1             ; 乱数の結果で分岐
+          JR      Z,$+5         ; 偶数ならそのまま
+          LD      HL,S3CHRP12   ; 奇数なら別の移動パターンを指定
+          LD      (S3CHARD1+2),HL ; 決定したアドレスをデータ枠へ上書き
+          CALL    DSET          ; 敵キャラを表示リストに登録
+S3CHARD1: DEFW    S3CHAPD1,S3CHARP1 ; 形状データと移動処理のアドレス
+          DEFB    0,20,255,0,0,0 ; 初期パラメータ
+          DEFB    7,1,00000000B ; 色と表示属性
           RET
           ;
-S3CHAPD1: DEFB    6,2
-          DEFB    -10,  0, 10
+          ; つららモデリングデータ
+S3CHAPD1: DEFB    6,2           ; 頂点数6、描画形式2
+          DEFB    -10,  0, 10   ; 3D頂点データ(X, Y, Z)
           DEFB     10,  0, 10
           DEFB      0,  0,-10
           DEFB      0, 80,  0
           DEFB      0, 25, -6
           DEFB      0, 50, -3
-          DEFB    1,2,3,1,4,3,0,2,4,0,0
+          DEFB    1,2,3,1,4,3,0,2,4,0,0 ; 線を結ぶインデックスリスト
           ;
-S3CHPD12: DEFB    6,2
+          ; 地面から生えている氷柱モデリングデータ
+S3CHPD12: DEFB    6,2           ; 形状パターンのバリエーション
           DEFB    -10,  0, 10
           DEFB     10,  0, 10
           DEFB      0,  0,-10
@@ -4978,54 +5191,57 @@ S3CHPD12: DEFB    6,2
           DEFB      0,-50, -3
           DEFB    1,4,3,0,4,2,0,0,4,0,0
           ;
-S3CHARP1: LD      A,(IX+1)
-          CP      1
-          JR      Z,S3CHRP1J
-          LD      A,(IX+9)
-          SUB     24
-          LD      (IX+9),A
-          LD      A,(MASTER+9)
-          XOR     (IX+9)
-          CP      40
-          RET     NC
-          LD      A,1
-          LD      (IX+1),A
+          ; つららの移動ルーチン
+S3CHARP1: LD      A,(IX+1)      ; 汎用ワークを取得
+          CP      1             ; 1かチェック
+          JR      Z,S3CHRP1J    ; 1なら落下
+          LD      A,(IX+9)      ; Z座標（奥行き）を取得
+          SUB     24            ; 手前に移動させる
+          LD      (IX+9),A      ; 更新
+          LD      A,(MASTER+9)  ; 自機のZ座標を取得
+          XOR     (IX+9)        ; ★(謎のXOR）
+          CP      40            ; 一定範囲に入ったか
+          RET     NC            ; まだなら何もしない
+          LD      A,1           ; 十分近づいたので
+          LD      (IX+1),A      ; 落下に移行
           RET
-S3CHRP1J: LD      A,(IX+8)
-          ADD     A,32
-          LD      (IX+8),A
+          ; 落下移動
+S3CHRP1J: LD      A,(IX+8)      ; Y座標（上下）を取得
+          ADD     A,32          ; 急激に下方向へ移動
+          LD      (IX+8),A      ; 
           RET
           ;
-S3CHRP12: LD      A,(IX+9)
-          SUB     24
+          ; 氷柱の移動ルーチン
+S3CHRP12: LD      A,(IX+9)      ; パターン2：ひたすら手前に迫るのみ
+          SUB     24            ;
           LD      (IX+9),A
           RET
-;
-; STAGE 3 -- CHARACTER 2
-;
-S3CHARA2: CALL    RND
+;-----------------------------------------------------------
+; 敵キャラ2　シャッター敵
+;-----------------------------------------------------------
+S3CHARA2: CALL    RND           ; 乱数で出現位置を計算
           AND     63
           ADD     A,64
-          LD      (S3CHARD2+4),A
+          LD      (S3CHARD2+4),A ; 1体目のX座標
           ADD     A,32
-          LD      (S3CHAR22+4),A
-          CALL    RND
+          LD      (S3CHAR22+4),A ; 2体目のX座標（少し横にずらす）
+          CALL    RND           ; 乱数
           AND     127
           ADD     A,64
-          LD      (S3CHARD2+5),A
-          LD      (S3CHAR22+5),A
-          CALL    DSET
+          LD      (S3CHARD2+5),A ; 1体目のY座標
+          LD      (S3CHAR22+5),A ; 2体目も同じ高さに配置
+          CALL    DSET          ; 1体目を画面に配置
 S3CHARD2: DEFW    S3CHAPD2,S3CHARP2
           DEFB    128,128,245,0,0,0
           DEFB    7,2,00000010B
-          CALL    DSET
+          CALL    DSET          ; 2体目を画面に配置
 S3CHAR22: DEFW    S3CHAPD2,S3CHRP22
           DEFB    128,128,245,0,0,0
           DEFB    7,2,00000010B
           RET
           ;
-S3CHAPD2: DEFB    10,2
-          DEFB     -6,-28, -6
+S3CHAPD2: DEFB    10,2          ; 頂点数10の複雑なモデル
+          DEFB     -6,-28, -6   ; 形状データリスト
           DEFB     -6,-28,  6
           DEFB      6,-28,  6
           DEFB      6,-28, -6
@@ -5035,77 +5251,77 @@ S3CHAPD2: DEFB    10,2
           DEFB      6, 28, -6
           DEFB      0,  0,  0
           DEFB      0, -9,  0
-          DEFB    1,2,3,4,1,5,6
+          DEFB    1,2,3,4,1,5,6 ; 描画ライン接続指示
           DEFB    7,8,5,0,4,8,0
           DEFB    3,7,0,2,6,0,0
           ;
-S3CHARP2: LD      A,(IX+1)
-          INC     (IX+1)
-          CP      3
-          JR      NC,$+12
-          CALL    MOVE
+S3CHARP2: LD      A,(IX+1)      ; 1体目の動き制御（左右の揺れ）
+          INC     (IX+1)        ; カウンタ増加
+          CP      3             ; 位相判定
+          JR      NC,$+12       ; 分岐
+          CALL    MOVE          ; 左・手前に移動
           DEFB    -16,0,-10,0,0,0
           RET
           ;
           CP      6
           JR      NC,$+12
-          CALL    MOVE
+          CALL    MOVE          ; 右・手前に移動
           DEFB    16,0,-10,0,0,0
           RET
           ;
-          XOR     A
+          XOR     A             ; カウンタリセット
           LD      (IX+1),A
-          JR      S3CHARP2
+          JR      S3CHARP2      ; ループしてジグザグ移動
           ;
-S3CHRP22: LD      A,(IX+1)
+S3CHRP22: LD      A,(IX+1)      ; 2体目の動き制御（1体目と逆の揺れ）
           INC     (IX+1)
           CP      3
           JR      NC,$+12
-          CALL    MOVE
+          CALL    MOVE          ; 右・手前に移動（交差する動き）
           DEFB    16,0,-10,0,0,0
           RET
           ;
           CP      6
           JR      NC,$+12
-          CALL    MOVE
+          CALL    MOVE          ; 左・手前に移動
           DEFB    -16,0,-10,0,0,0
           RET
           ;
           XOR     A
           LD      (IX+1),A
           JR      S3CHRP22
-;
-; STAGE3 -- CHARACTER 3
-;
-S3CHARA3: CALL    RND
+;-----------------------------------------------------------
+; 敵キャラ3（ランダム浮遊型）ルーチン
+;-----------------------------------------------------------
+S3CHARA3: CALL    RND           ; 乱数で出現座標を吟味
           CP      210
-          JR      NC,$-5
+          JR      NC,$-5        ; 端すぎたらやり直し
           ADD     A,20
-          LD      (S3CHARD3+4),A
-          CALL    RND
+          LD      (S3CHARD3+4),A ; X座標決定
+          CALL    RND           ; 乱数
           CP      210
-          JR      NC,$-5
+          JR      NC,$-5        ; 範囲チェック
           ADD     A,20
-          LD      (S3CHARD3+5),A
-          CALL    DSET
-S3CHARD3: DEFW    S3CHAPD3,S3CHARP3
-          DEFB    0,0,245,0,0,0
-          DEFB    7,1,00000000B
+          LD      (S3CHARD3+5),A ; Y座標決定
+          CALL    DSET          ; キャラクタを登録
+S3CHARD3: DEFW    S3CHAPD3,S3CHARP3 ; 形状データ、移動ルーチン指定
+          DEFB    0,0,245,0,0,0 ; 初期属性
+          DEFB    7,1,00000000B ; 色とサイズ
           RET
           ;
-S3CHARP3: LD      A,(IX+9)
-          SUB     33
+S3CHARP3: LD      A,(IX+9)      ; Z座標（奥行き）を取得
+          SUB     33            ; かなりの速度で迫ってくる
           LD      (IX+9),A
-          LD      A,(IX+8)
-          XOR     16
+          LD      A,(IX+8)      ; Y座標を取得
+          XOR     16            ; ビット反転で小刻みに上下させる
           LD      (IX+8),A
-          LD      A,(IX+13)
-          XOR     2
+          LD      A,(IX+13)     ; 点滅演出
+          XOR     2             ; 
           LD      (IX+13),A
           RET
           ;
-S3CHAPD3: DEFB    9,1
-          DEFB    -16,-16,-16
+S3CHAPD3: DEFB    9,1           ; 頂点数9、描画形式1
+          DEFB    -16,-16,-16   ; 立方体の形状データ
           DEFB     16,-16,-16
           DEFB    -16, 16,-16
           DEFB     16, 16,-16
@@ -5114,121 +5330,59 @@ S3CHAPD3: DEFB    9,1
           DEFB    -16, 16, 16
           DEFB     16, 16, 16
           DEFB      0,  0,  0
-          DEFB    1,2,4,3,7,5,1,3,0
-          DEFB    5,6,8,7,0,6,2,0,8,4,0,0
-;
-; STAGE 3 -- BOSS
-;
-S3BOSS:   LD      A,(SWHICH)
-          OR      00000001B
-          LD      (SWHICH),A
-          LD      A,24
-          CALL    MAIN
-          CALL    CLSPRI
+          DEFB    1,2,4,3,7,5,1,3,0 ; 接続情報1
+          DEFB    5,6,8,7,0,6,2,0,8,4,0,0 ; 接続情報2
+
+;-----------------------------------------------------------
+; 敵キャラ4　バキュラ状の敵（2軸回転、1軸回転の2種類)
+;-----------------------------------------------------------
+S3CHAPD4: DEFB    5,1         ; 頂点数5、形式1
+          DEFB    -25,-25,  0   ; 正方形の板のような形状
+          DEFB     25,-25,  0
+          DEFB     25, 25,  0
+          DEFB    -25, 25,  0
+          DEFB      0,  0,  0
+          DEFB    1,2,3,4,1,0,0 ; 形状接続
           ;
-          LD      A,1
-          LD      (SCOLOR+1),A
-          LD      A,1
-          LD      HL,HOME
-          LD      (MASTER+5),HL
-          LD      A,1
-          CALL    MAIN
-          LD      A,(MASTER+1)
-          OR      A
-          JR      NZ,$-9
-          ;
-          CALL    DSET
-          DEFW    PARPD1,S3CLPTR2
-          DEFB    128,255,240,0,0,0
-          DEFB    11,0,00001010B
-          LD      A,20
-          CALL    MAIN
-          LD      HL,S3CLPTR
-          LD      (MASTER+5),HL
-          XOR     A
-          LD      (SCOLOR+1),A
-          LD      A,32
-          CALL    MAIN
-          ;
-          CALL    DSET
-          DEFW    S3STAGM1,MHYOUJ
-          DEFB    7,24,0,0,0,38,8
-          DEFB    0,00000101B
-          CALL    DSET
-          DEFW    S3CLEARM,MHYOUJ
-          DEFB    7,24,0,0,0,38,134
-          DEFB    0,00000101B
-          LD      A,28
-          CALL    MAIN
-          CALL    DSET
-          DEFW    S3BONUSM,MHYOUJ
-          DEFB    7,24,0,0,0,0,55
-          DEFB    0,00000101B
-          CALL    DSET
-          DEFW    S3SCOREM,MHYOUJ
-          DEFB    7,24,0,0,0,8,80
-          DEFB    0,00010101B
-          LD      HL,(SCORE)
-          LD      DE,3000
-          ADD     HL,DE
-          JR      NC,$+5
-          LD      HL,65535
-          LD      (SCORE),HL
-          LD      A,(STOCK)
-          ADD     A,2
-          CP      10
-          JR      C,$+4
-          LD      A,9
-          LD      (STOCK),A
-          LD      A,30
-          CALL    MAIN
-          CALL    FADE
-          LD      A,24
-          CALL    SDOFF
-          CALL    MAIN
+S3CHARP4: LD      A,(IX+13)     ; 点滅演出
+          XOR     2
+          LD      (IX+13),A
+          CALL    MOVE          ; 猛スピードで迫る移動(Z=-32)
+          DEFB    0,0,-32,2,0,3
           RET
           ;
-S3CLPTR:  LD      A,(IX+1)
-          INC     (IX+1)
-          CP      8
-          JR      NC,$+11
-          LD      A,(IX+9)
-          ADD     A,6
-          LD      (IX+9),A
-          RET
-          CP      16
-          RET     NC
-          LD      A,(IX+8)
-          ADD     A,12
-          LD      (IX+8),A
-          INC     (IX+12)
+S3CHRP42: LD      A,(IX+13)     ; パターン2：同様に高速移動
+          XOR     2
+          LD      (IX+13),A     ; 点滅演出
+          CALL    MOVE
+          DEFB    0,0,-32,0,-3,0
           RET
           ;
-S3CLPTR2: LD      A,(IX+1)
-          INC     (IX+1)
-          CP      16
-          RET     NC
-          LD      A,(IX+9)
-          SUB     6
-          LD      (IX+9),A
+S3CHARA4: CALL    RND           ; キャラ4生成メイン
+          LD      (S3CHARD4+4),A ; 乱数X座標
+          CALL    RND
+          LD      (S3CHARD4+5),A ; 乱数Y座標
+          LD      HL,S3CHARP4   ; 移動ルーチン1
+          AND     1             ; 乱数で分岐
+          JR      Z,$+5
+          LD      HL,S3CHRP42   ; 移動ルーチン2
+          LD      (S3CHARD4+2),HL
+          CALL    DSET
+S3CHARD4: DEFW    S3CHAPD4,S3CHRP42
+          DEFB    0,0,255,0,0,0
+          DEFB    7,1,00000000B
           RET
-          ;
-S3ATACKM: DEFB  'A',9,0,'T',32,0,'A',55,0,'C',79,0,'K',106,0,0
-S3CLEARM: DEFB  'C',60,30,'L',75,30,'E',90,30,'A',105,30,'R',120,30,0
-S3BONUSM: DEFB  'B',88,30,'O',108,30,'N',128,30,'U',148,30,'S',168,30,0
-S3SCOREM: DEFB  '3',98,60,'0',113,60,'0',128,60,'0',142,60
-          DEFB  '2',98,90,'U',113,90,'P',128,90,0
-;
-; STAGE 3 -- CHARACTER 5
-;
-S3CHARA5: CALL    DSET
-          DEFW    S3CHAPD5,S3CHARP5
+;-----------------------------------------------------------
+; 敵キャラ5　吸い込み換気扇型の敵
+;-----------------------------------------------------------
+S3CHARA5: CALL    DSET          ; 敵キャラ5を画面に生成
+          DEFW    S3CHAPD5,S3CHARP5 ; 形状と移動ルーチン
           DEFB    128,128,255,0,0,0
           DEFB    7,2,00000010B
           RET
           ;
-S3CHAPD5: DEFB    10,4
-          DEFB      0,-30,-10
+S3CHAPD5: DEFB    10,4          ; 頂点数10、描画形式4
+          DEFB      0,-30,-10   ; 複雑なトゲ状の形状
           DEFB     26,-15,  0
           DEFB     26, 15,-10
           DEFB      0, 30,  0
@@ -5238,147 +5392,109 @@ S3CHAPD5: DEFB    10,4
           DEFB    -16,  0, -5
           DEFB      8,-15, -5
           DEFB      8, 15, -5
-          DEFB    1,2,5,6,3,4,1,0,0
+          DEFB    1,2,5,6,3,4,1,0,0 ; 形状接続情報
           ;
-S3CHARP5: LD      A,(LIFE)
+S3CHARP5: LD      A,(LIFE)      ; プレイヤーが生きているか
           OR      A
-          JR      Z,S3RP5END
-          LD      A,(IX+1)
+          JR      Z,S3RP5END    ; 死んでいたら追尾しない
+          LD      A,(IX+1)      ; 内部カウンタ
           INC     (IX+1)
-          AND     3
-          LD      HL,HOME
-          JR      Z,$+5
-          LD      HL,KEY
-          LD      (MASTER+5),HL
-S3RP5END: LD      A,(IX+13)
+          AND     3             ; 4フレームに1回判定
+          LD      HL,HOME       ; プレイヤーを追いかけるように
+          JR      Z,$+5         ; ターゲット変更
+          LD      HL,KEY        ; キー入力に反応させる
+          LD      (MASTER+5),HL ; ターゲットをセット
+S3RP5END: LD      A,(IX+13)     ; 回転演出
           XOR     2
           LD      (IX+13),A
-          CALL    MOVE
+          CALL    MOVE          ; 前進させる
           DEFB    0,0,-8,3,0,0
           RET
-;
-; STAGE 3 -- CHARACTER 4
-;
-S3CHAPD4:   DEFB    5,1
-          DEFB    -25,-25,  0
-          DEFB     25,-25,  0
-          DEFB     25, 25,  0
-          DEFB    -25, 25,  0
-          DEFB      0,  0,  0
-          DEFB    1,2,3,4,1,0,0
-          ;
-S3CHARP4: LD      A,(IX+13)
-          XOR     2
-          LD      (IX+13),A
-          CALL    MOVE
-          DEFB    0,0,-32,2,0,3
-          RET
-          ;
-S3CHRP42: LD      A,(IX+13)
-          XOR     2
-          LD      (IX+13),A
-          CALL    MOVE
-          DEFB    0,0,-32,0,-3,0
-          RET
-          ;
-S3CHARA4: CALL    RND
-          LD      (S3CHARD4+4),A
-          CALL    RND
-          LD      (S3CHARD4+5),A
-          LD      HL,S3CHARP4
-          AND     1
-          JR      Z,$+5
-          LD      HL,S3CHRP42
-          LD      (S3CHARD4+2),HL
-          CALL    DSET
-S3CHARD4: DEFW    S3CHAPD4,S3CHRP42
-          DEFB    0,0,255,0,0,0
-          DEFB    7,1,00000000B
-          RET
-;
-; STAGE 3 -- CHARACTER 6
-;
-S3CHARA6: CALL    RND
+
+;-----------------------------------------------------------
+; 敵キャラ6　下から生えている氷柱ルーチン
+;-----------------------------------------------------------
+S3CHARA6: CALL    RND           ; 乱数でX座標を決定
           LD      (S3CHARD6+4),A
-          CALL    DSET
+          CALL    DSET          ; 画面下部(Y=235)に出現させる
 S3CHARD6: DEFW    S3CHPD12,S3CHARP6
           DEFB    0,235,255,0,0,0
           DEFB    7,1,00000000B
           RET
           ;
-S3CHARP6: LD      A,(IX+9)
-          SUB     24
+S3CHARP6: LD      A,(IX+9)      ; 画面奥からではなく
+          SUB     24            ; 急速に手前に迫る動き
           LD      (IX+9),A
           RET
-;
-; STAGE 3 -- CHARACTER 7
-;
-S3CHARA7: CALL    RND
+;-----------------------------------------------------------
+; 敵キャラ7　大きく回転しながら､最後に手前にくる直方体ルーチン
+;-----------------------------------------------------------
+S3CHARA7: CALL    RND           ; 乱数座標
           AND     127
           ADD     A,64
-          LD      (S3CHARD7+5),A
+          LD      (S3CHARD7+5),A ; Y座標決定
           CALL    DSET
 S3CHARD7: DEFW    S3CHAPD2,S3CHARP7
           DEFB    30,128,255,0,0,0
           DEFB    7,2,00000010B
           RET
           ;
-S3CHARP7:   LD      A,(IX+11)
+S3CHARP7: LD      A,(IX+11)   ; 特殊な回転角などのパラメータを更新
           ADD     A,3
           LD      (IX+11),A
           LD      A,(IX+1)
           INC     (IX+1)
-          CP      5
+          CP      5             ; 位相チェック
           JR      NC,$+5
-          JP      S3CHARP6
-          CP      29
+          JP      S3CHARP6      ; 初期はキャラ6と同じ動き
+          CP      29            ; 中期
           JR      NC,S3CHARP6
-          CALL    RTURN
+          CALL    RTURN         ; 回転しながら接近する特殊挙動
           DEFB    128,128,144,0,0,2
           INC     (IX+12)
           INC     (IX+12)
           RET
-;
-; STAGE 3 -- CHARACTER 8
-;
-S3CHARA8: CALL    DSET
+;-----------------------------------------------------------
+; 敵キャラ8　バキュラ状の物体を発射しながら去って行く敵
+;-----------------------------------------------------------
+S3CHARA8: CALL    DSET          ; バキュラ状の物体の射出機
           DEFW    S3CHAPD8,S3CHRP81
           DEFB    128,20,40,0,0,0
           DEFB    11,2,00000000B
-          CALL    DSET
+          CALL    DSET          ; プロペラ
           DEFW    S3CHAPD5,S3CHRP82
           DEFB    128,20,40,0,8,0
           DEFB    11,2,00000000B
           RET
           ;
-S3CHARP8: LD      A,(IX+1)
+S3CHARP8: LD      A,(IX+1)      ; 移動共通ルーチン
           INC     (IX+1)
           CP      46
-          JR      NC,$+11
-          LD      A,(IX+8)
+          JR      NC,$+11       ; 一定時間経過で挙動変更
+          LD      A,(IX+8)      ; Y軸（高さ）をずらしていく
           ADD     A,4
           LD      (IX+8),A
           RET
-          CALL    RTURN
+          CALL    RTURN         ; 回転処理
           DEFB    128,128,128,2,0,0
-          LD      A,(IX+9)
+          LD      A,(IX+9)      ; 遠ざかるように移動
           ADD     A,8
           LD      (IX+9),A
           RET
           ;
-S3CHRP81: CALL    S3CHARP8
+S3CHRP81: CALL    S3CHARP8      ; 共通移動ルーチンで移動
           LD      A,(IX+1)
           CP      46
           RET     C
-          JP      S3BACURA
+          JP      S3BACURA      ; バキュラ射出
           ;
-S3CHRP82: CALL    S3CHARP8
+S3CHRP82: CALL    S3CHARP8      ; プロペラの回転
           LD      A,(IX+10)
           ADD     A,3
           LD      (IX+10),A
           RET
           ;
-S3CHAPD8: DEFB    7,0
+S3CHAPD8: DEFB    7,0           ; 射出機の形状データ
           DEFB    -15,  5,-10
           DEFB    -15, 35,-10
           DEFB     15,  5,-10
@@ -5389,29 +5505,155 @@ S3CHAPD8: DEFB    7,0
           DEFB    1,2,4,3,1,5,2,0
           DEFB    3,5,4,0,6,7,0,0
 ;
-; STAGE 3 -- BACURA
-;
-S3BACURA: LD      A,(IX+7)
+;-----------------------------------------------------------
+; BACURA: 特殊移動（回転しながら去る）
+;-----------------------------------------------------------
+S3BACURA: LD      A,(IX+7)      ; 現在の位置情報を転送
           LD      (S3BACURD+4),A
           LD      A,(IX+8)
           LD      (S3BACURD+5),A
           LD      A,(IX+9)
           LD      (S3BACURD+6),A
-          CALL    DSET
+          CALL    DSET          ; 最終的なバキュラ・オブジェクトを生成
 S3BACURD: DEFW    S3CHAPD4,S3BACURP
           DEFB    0,0,0,0,0,0
           DEFB    10,1,00000100B
           RET
           ;
-S3BACURP: LD      A,(IX+10)
+S3BACURP: LD      A,(IX+10)     ; 回転速度の制御
           SUB     3
           LD      (IX+10),A
-          LD      A,(IX+9)
+          LD      A,(IX+9)      ; 画面外へ
           SUB     24
-          JP      C,MALEND
+          JP      C,MALEND      ; 画面外(CARRY発生)なら消去ルーチンへ
           LD      (IX+9),A
           RET
-
+          ;
+;-----------------------------------------------------------
+; STAGE 3 ボス戦・クリア処理
+;-----------------------------------------------------------
+S3BOSS:   LD      A,(SWITCH)    ; スイッチ状態取得
+          OR      00000001B     ; 地平線を表示
+          LD      (SWITCH),A    ; 保存
+          LD      A,24          ; 演出用ウェイト
+          CALL    MAIN          ; 24フレームMAIN実行
+          CALL    CLSPRI        ; オブジェクトワークエリア全消去
+          ;
+          LD      A,1           ; 
+          LD      (SCOLOR+1),A  ; 地平線の移動速度を落とす
+          ;
+          LD      A,(SWITCH)    ; 
+          RES     2,A           ; スピードアップ状態解除
+          LD      (SWITCH),A    ; 
+          ;
+          LD      HL,HOME       ; 自機を定位置へ
+          LD      (MASTER+5),HL ; 自機の移動ルーチンを書き換え
+          LD      A,1
+          CALL    MAIN          ; 1フレームMAIN実行
+          LD      A,(MASTER+1)  ; 状態チェック
+          OR      A
+          JR      NZ,$-9        ; 定位置にくるまでループ
+          ;
+          CALL    DSET          ; 大型キャンプを作成
+          DEFW    PARPD1,S3CLPTR2
+          DEFB    128,255,240,0,0,0
+          DEFB    11,0,00001010B
+          ;
+          LD      A,20          ; ウェイト
+          CALL    MAIN
+          LD      HL,S3CLPTR    ; 自機の移動ルーチンを書き換え
+          LD      (MASTER+5),HL
+          XOR     A             ;
+          LD      (SCOLOR+1),A  ; 地平線を完全に停止する
+          LD      A,14
+          CALL    MAIN
+          CALL    SDOFF         ; エンジン音を消す
+          LD      A,18          ; ウェイト
+          CALL    MAIN          ; 32フレームMAINを実行
+          ;
+          ; --- クリアメッセージとスコア計算 ---
+          CALL    DSET          ; ステージ数表示
+          DEFW    S3STAGM1,MHYOUJ
+          DEFB    7,24,0,0,0,38,8
+          DEFB    0,00000101B
+          CALL    DSET          ; "CLEAR"メッセージ
+          DEFW    S3CLEARM,MHYOUJ
+          DEFB    7,24,0,0,0,38,134
+          DEFB    0,00000101B
+          LD      A,28          ; メッセージ表示時間
+          CALL    MAIN
+          CALL    DSET          ; "BONUS"メッセージ
+          DEFW    S3BONUSM,MHYOUJ
+          DEFB    7,24,0,0,0,0,55
+          DEFB    0,00000101B
+          CALL    DSET          ; スコア詳細表示
+          DEFW    S3SCOREM,MHYOUJ
+          DEFB    7,24,0,0,0,8,80
+          DEFB    0,00010101B
+          ;
+          LD      HL,(SCORE)    ; 現在のスコアをロード
+          LD      DE,3000       ; クリアボーナス 3000点
+          ADD     HL,DE         ; 加算
+          JR      NC,$+5        ; オーバーフローしなければそのまま
+          LD      HL,65535      ; カンスト(65535)
+          LD      (SCORE),HL    ; 更新
+          ;
+          ; --- 残機アップ処理 ---
+          LD      A,(STOCK)     ; 現在の残機数(STOCK)をロード
+          ADD     A,2           ; 自機を2機アップ
+          CP      10            ; 10以上(二桁)にならないように
+          JR      C,$+4         ; 大丈夫ならスキップ
+          LD      A,9           ; 最大残機は9に制限
+          LD      (STOCK),A     ; 更新保存
+          ;
+          LD      A,30          ; 終了間際のウェイト
+          CALL    MAIN
+          CALL    FADE          ; 画面をフェードアウト
+          LD      A,24
+          CALL    SDOFF         ; サウンドを停止
+          CALL    MAIN
+          RET                   ; ステージ3終了、呼び出し元へ
+          ;
+;-----------------------------------------------------------
+; キャンプに自機が到着する移動ルーチン
+;-----------------------------------------------------------
+S3CLPTR:  LD      A,(IX+1)      ; クリア後の自機上昇演出
+          INC     (IX+1)
+          CP      8
+          JR      NC,$+11
+          LD      A,(IX+9)      ; 遠ざかるようにZ座標を加算
+          ADD     A,6
+          LD      (IX+9),A
+          RET
+          CP      16
+          RET     NC
+          LD      A,(IX+8)      ; Y座標を加算して上昇
+          ADD     A,12
+          LD      (IX+8),A
+          INC     (IX+12)       ; 特殊属性
+          RET
+          
+;-----------------------------------------------------------
+; キャンプの移動ルーチン
+;-----------------------------------------------------------
+S3CLPTR2: LD      A,(IX+1)      ; サブオブジェクトのクリア後演出
+          INC     (IX+1)
+          CP      16
+          RET     NC
+          LD      A,(IX+9)      ; 少しずつ遠ざける
+          SUB     6
+          LD      (IX+9),A
+          RET
+          ;
+;-----------------------------------------------------------
+; 文字列・メッセージ用データ
+;-----------------------------------------------------------
+S3ATACKM: DEFB  'A',9,0,'T',32,0,'A',55,0,'C',79,0,'K',106,0,0 ; "ATACK"
+S3CLEARM: DEFB  'C',60,30,'L',75,30,'E',90,30,'A',105,30,'R',120,30,0 ; "CLEAR"
+S3BONUSM: DEFB  'B',88,30,'O',108,30,'N',128,30,'U',148,30,'S',168,30,0 ; "BONUS"
+S3SCOREM: DEFB  '3',98,60,'0',113,60,'0',128,60,'0',142,60 ; "3000" (ボーナス点)
+          DEFB  '2',98,90,'U',113,90,'P',128,90,0 ; "2UP" (残機アップ)
+          ;
 ;-----------------------------------------------------------
 ;
 ; STAGE 4
@@ -5423,7 +5665,7 @@ S3BACURP: LD      A,(IX+10)
 STAGE4:   CALL    CLSPRI
           LD	  (STACK),SP
           LD      A,00001000B
-          LD      (SWHICH),A
+          LD      (SWITCH),A
           CALL    DSET
           DEFW    S4STAGM1,MHYOUJ
           DEFB    8,40,0,0,0,44
@@ -5515,9 +5757,9 @@ S4RETLOP: LD      A,6
           CALL    MAIN
           DJNZ    S4LOOP
           ;
-          LD      A,(SWHICH)
+          LD      A,(SWITCH)
           AND     11111110B
-          LD      (SWHICH),A
+          LD      (SWITCH),A
           LD      HL,S4CONT2
           LD      (CONTRT),HL
           ;
@@ -6165,11 +6407,12 @@ S4BOSSRP: LD      A,(IX+13)
           LD      (IX+13),A
           LD      A,(PORIDAT+1)
           OR      A
-          JR      Z,$+12
+          JR      Z,$+15
           XOR     A
           LD      (IX+0),A
           LD      A,00011000B
           LD      (IX+15),A
+          CALL    BOMBOBJ
           RET
 S4BOSRJ:  LD      A,(IX+1)
           INC     (IX+1)
