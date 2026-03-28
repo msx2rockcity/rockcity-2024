@@ -1,14 +1,14 @@
-;*********************************************************
+;**********************************************************
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 3.0.2
+;  MSXPen LAST VERSION VER 3.1.0
 ;
 ;  PROGRAM by msx2rockcity
 ;
 ;  (C) Copyright 1993-2026 msx2rockcity
 ;
-;*********************************************************
+;**********************************************************
 ;-------------------------------------------
 ;
 ;  MAIN1
@@ -31,8 +31,8 @@ EXPTBL:  EQU     0FCC1H  ; [WORK AREA] Šî–{ƒXƒƒbƒg‚ÌŠg’£ƒtƒ‰ƒO‚ªŠi”[‚³‚ê‚Ä‚¢‚éƒ
                          ; u‚Ç‚ÌƒXƒƒbƒg‚ªŠg’£‚³‚ê‚Ä‚¢‚é‚©v‚ðŠm”F‚·‚é‚½‚ß‚ÉŽg‚í‚ê‚Ü‚·B
 CLIKSW:   EQU     0F3DBH ; ƒNƒŠƒbƒN‰¹‚ðÁ‚·‚©‚Ç‚¤‚©
 MJVER:    EQU     '3'    ; ƒƒWƒƒ[ƒo[ƒWƒ‡ƒ“
-MIVER:    EQU     '0'    ; ƒ}ƒCƒi[ƒo[ƒWƒ‡ƒ“
-PTVER:    EQU     '2'    ; ƒpƒbƒ`ƒo[ƒWƒ‡ƒ“
+MIVER:    EQU     '1'    ; ƒ}ƒCƒi[ƒo[ƒWƒ‡ƒ“
+PTVER:    EQU     '0'    ; ƒpƒbƒ`ƒo[ƒWƒ‡ƒ“
 DSTOCK    EQU     7      ; ƒfƒtƒHƒ‹ƒgŽ©‹@”iÅ‘å9‹@j
           ORG     08200H ; ŠJŽnƒAƒhƒŒƒXiŒÀŠE‚Ü‚Åí‚Á‚½j
 ;
@@ -66,6 +66,10 @@ START:    LD      A,(EXPTBL)    ; ƒƒCƒ“ƒXƒƒbƒg‚ÌŠg’£ƒe[ƒuƒ‹‚ðŽæ“¾
           LD      IX,005FH      ; BIOS‚ÌCHGMODi‰æ–Êƒ‚[ƒh•ÏXj‚ÌƒAƒhƒŒƒX
           LD      IY,(EXPTBL-1) ; BIOS‚ªÚ‚Á‚Ä‚¢‚éƒXƒƒbƒgî•ñ‚ðŽæ“¾
           CALL    CALSLT        ; ƒCƒ“ƒ^[ƒXƒƒbƒgƒR[ƒ‹‚Å‰æ–Ê‚ðSCREEN 5‚ÉØ‚è‘Ö‚¦
+          ;   
+          LD      A, 15         ; ƒy[ƒW3‚Ö‘S256•¶Žš‚ð 16x16 ‚Å“WŠJ
+          LD      (WK_FG), A
+          CALL    FT_EXPAND_256
           ;
           DI                    ; Š„‚èž‚Ý‹ÖŽ~iƒfƒŠƒP[ƒg‚ÈVDP‘€ìŠJŽnj
           LD      BC,(RDVDP+1)  ; VDP‚ÌƒRƒ“ƒgƒ[ƒ‹ƒ|[ƒgi#99j‚ðBC‚É
@@ -77,7 +81,7 @@ START:    LD      A,(EXPTBL)    ; ƒƒCƒ“ƒXƒƒbƒg‚ÌŠg’£ƒe[ƒuƒ‹‚ðŽæ“¾
           EI                    ; Š„‚èž‚Ý‹–‰Â
           ;
           LD      (SSTACK),SP   ; Œ»Ý‚ÌƒXƒ^ƒbƒNƒ|ƒCƒ“ƒ^‚ð•Û‘¶iŒã‚Å–ß‚ê‚é‚æ‚¤‚Éj
-          JP      LOGODEMO      ; ƒƒSƒfƒ‚iƒƒCƒ“ˆ—j‚Ö
+          JP      LICENSE_DEMO      ; ƒ‰ƒCƒZƒ“ƒXƒfƒ‚iƒƒCƒ“ˆ—j‚Ö
 ;
 ;---- MAIN ROUTINE ----
 ;
@@ -90,6 +94,7 @@ START:    LD      A,(EXPTBL)    ; ƒƒCƒ“ƒXƒƒbƒg‚ÌŠg’£ƒe[ƒuƒ‹‚ðŽæ“¾
 ; bit4  ƒQ[ƒ€ƒI[ƒo[”»’èƒtƒ‰ƒO          1‚È‚çƒ‰ƒCƒt0‚Ì‚Æ‚«Ž©‹@‚Ì”š”jˆ—‚ðs‚¤
 ; bit5  –³“Gó‘Ô‚©‚Ìƒtƒ‰ƒO                1‚È‚ç–³“Gó‘Ô
 ; bit6  ƒ‰ƒCƒtƒQ[ƒW‚ð•\Ž¦‚·‚é‚©‚Ç‚¤‚©    1‚È‚ç•\Ž¦
+; bit7  ‘S”j‰óƒtƒ‰ƒOi”j‰ó‚µ‚ÄƒNƒŠƒAj    1‚È‚ç”j‰ó‚ðŽÀs‚µ‚Ä0‚É
 ;
 ;----------------------
 MAIN:     PUSH    IX            ; ƒƒCƒ“‚É“ü‚é‘O‚ÌƒŒƒWƒXƒ^‚ð‘S‚Ä•Û‘¶
@@ -118,6 +123,13 @@ MAINS:    PUSH    AF            ; ƒ‹[ƒvƒJƒEƒ“ƒ^(AF)‚ð•Û‘¶
           BIT     5,A           ; bit5: –³“Gó‘Ô‚©‚Ç‚¤‚©
           CALL    NZ,GOD_MAIN   ; –³“Gˆ—
           ;
+          LD      A,(SWITCH)
+          BIT     7,A           ; ‘S”j‰óˆ—‚ðs‚¤‚©‚Ç‚¤‚©
+          CALL    NZ,ALLBREAK   ; ‘S”j‰óˆ—ƒR[ƒ‹
+          RES     7,A           ; ƒtƒ‰ƒOƒŠƒZƒbƒg
+          LD      (SWITCH),A    ;
+          ;
+          ;
 M1MA0:    BIT     3,A           ; bit3: ƒIƒuƒWƒFƒNƒgƒ[ƒNƒGƒŠƒA‚ÌƒLƒƒƒ‰‚ð•`‰æ‚·‚é‚©
           JR      Z,M1MA2       ; 0‚È‚çƒXƒLƒbƒv
           LD      HL,PORIDAT    ; ƒIƒuƒWƒFƒNƒgŒQ‚Ìƒf[ƒ^æ“ªƒAƒhƒŒƒX
@@ -136,7 +148,27 @@ M1MA1:    LD      A,(HL)        ; ƒIƒuƒWƒFƒNƒg‚ª—LŒø(”ñ0)‚©ƒ`ƒFƒbƒN
           ;
 M1MA2:    BIT     6,A           ; bit6: ƒ‰ƒCƒtƒQ[ƒW‚È‚Ç‚ÌUI•\Ž¦ƒtƒ‰ƒO
           CALL    NZ,WRLIFE     ; •K—v‚È‚çƒ‰ƒCƒt‚ð•`‰æ
-          ;
+          
+          ;--- ƒAƒXƒL[ƒtƒHƒ“ƒg1s•\Ž¦ƒ‹[ƒ`ƒ“ ---
+          PUSH    AF           
+          PUSH    HL
+          LD      A,(ASCOUNT)   ; ƒtƒHƒ“ƒg‚ª‚ ‚ê‚ÎÅŒã‚É•\Ž¦
+          OR      A
+          JR      Z,M1MA4
+          LD      HL,(ASCFONT)
+          PUSH    BC
+          PUSH    DE
+          PUSH    IX
+          CALL    PRINT_STR          
+          POP     IX
+          POP     DE
+          POP     BC
+          LD      A,(ASCOUNT)
+          DEC     A
+          LD      (ASCOUNT),A
+M1MA4:    POP     HL
+          POP     AF
+          
           ; --- VRAM•\Ž¦ƒy[ƒW‚ÌØ‚è‘Ö‚¦iƒ_ƒuƒ‹ƒoƒbƒtƒ@ƒŠƒ“ƒOj ---
           PUSH    AF            ; 
           LD      A,(VIJUAL)    ; Œ»Ý‚Ì•\Ž¦ƒy[ƒWi0 or 1j‚ðŽæ“¾
@@ -1510,6 +1542,8 @@ MASTER:   DEFS    16            ; Ž©‹@iƒ}ƒXƒ^[ƒIƒuƒWƒFƒNƒgjê—p‚Ìƒ[ƒN
                                 ; (À•WAAIƒ|ƒCƒ“ƒ^Aƒtƒ‰ƒOA‰ñ“]Šp‚È‚Ç)
 PORIDAT:  DEFS    256           ; šƒGƒlƒ~[Eƒ^ƒXƒNEƒGƒŠƒA
                                 ; (16ƒoƒCƒg‚Ìƒ[ƒN ~ Å‘å16ŒÂ•ª)
+ASCOUNT:  DEFB    0             ; ƒtƒHƒ“ƒgƒJƒEƒ“ƒ^
+ASCFONT:  DEFW    0             ; ƒtƒHƒ“ƒgƒAƒhƒŒƒX
 ;--------------------------------------------
 ;
 ; MAIN2
@@ -1538,6 +1572,7 @@ TOP2:	  EQU	  $
 ;
 ; ¦(IX+15) ƒtƒ‰ƒO‚Ì‹@”\
 ;
+; bit0 MULTIƒ‹[ƒ`ƒ“‚ðƒXƒLƒbƒv‚³‚¹‚é‚½‚ßí‚É1
 ; bit1 xÀ•W2”{Šg‘å•\Ž¦
 ; bit2 xÀ•W0.5”{k¬•\Ž¦
 ; bit3 yÀ•W2”{Šg‘å•\Ž¦
@@ -2444,10 +2479,17 @@ TUCHNONE:
 TUCH0:    CALL    ITEMGT        ; ”í’e‰¹i‚Ü‚½‚Í‰Î‰ÔƒGƒtƒFƒNƒgj‚ðŒÄ‚Ño‚µ
           CALL    MOVESD
           CALL    GOD_SET       ; –³“GƒZƒbƒg
+          
+          LD      A,2
+          LD      HL,GODSTR
+          CALL    FONT_SET
+          
           XOR     A             ; 
           LD      (IX+0),A      ; ƒAƒCƒeƒ€ƒIƒuƒWƒFƒNƒg‚ðÁ–Å‚³‚¹‚é
           LD      (IX+2),A      ; 
           RET                   ; –ß‚é
+          
+GODSTR:  DEFB    96, 120, 7, "GOD MODE", 0
           ;
 ;---- ”j‰óƒIƒuƒWƒFƒNƒg‚É“–‚½‚Á‚½ˆ—@ƒ_ƒ[ƒW1 ----
 TUCH1:    CALL    DAMAGESD        ; ”í’e‰¹‚ð–Â‚ç‚·
@@ -2478,22 +2520,41 @@ TUCH3:    CALL    ITEMGT        ; ƒAƒCƒeƒ€Žæ“¾‰¹‚ð–Â‚ç‚·
           CALL    MOVESD        ; ˆÚ“®‰¹i‚Ü‚½‚ÍŽæ“¾‰‰oj‚ðŒÄ‚Ño‚µ
           LD      A,4           ; 
           CALL    LIFEUP        ;
+
+          LD      A,2
+          LD      HL,CURSTR
+          CALL    FONT_SET
+          
           XOR     A             ; 
           LD      (IX+0),A      ; ƒAƒCƒeƒ€ƒIƒuƒWƒFƒNƒg‚ðÁ–Å‚³‚¹‚é
           LD      (IX+2),A      ; 
           RET                   ; –ß‚é
           ;
+CURSTR:  DEFB    100, 120, 9, "LIFE UP", 0
+          
 ;---- ƒXƒs[ƒhƒAƒbƒvƒAƒCƒeƒ€‚É“–‚½‚Á‚½ˆ—
 TUCH4:    CALL    ITEMGT        ; ƒAƒCƒeƒ€Žæ“¾‰¹‚ð–Â‚ç‚·
           CALL    MOVESD        ; 
           LD      A,(SWITCH)    ; ƒVƒXƒeƒ€ƒXƒCƒbƒ`‚ðƒ[ƒh
           XOR     00000100B     ; bit2‚ð”½“]iƒXƒs[ƒhƒAƒbƒvƒtƒ‰ƒO‚ð”½“]j
           LD      (SWITCH),A    ; ƒXƒCƒbƒ`‚ðXV
+          
+          LD      HL,TB_STR1
+          BIT     2,A
+          JR      Z,JR_TBSTR
+          LD      HL,TB_STR2
+         
+JR_TBSTR: 
+          LD      A,2
+          CALL    FONT_SET
           XOR     A             ; 
           LD      (IX+0),A      ; ƒAƒCƒeƒ€ƒIƒuƒWƒFƒNƒg‚ðÁ–Å‚³‚¹‚é
           LD      (IX+2),A      ; 
           RET                   ; –ß‚é
           ;
+
+TB_STR1:  DEFB    92, 120, 13, "TURBO OFF", 0          
+TB_STR2:  DEFB    96, 120, 13, "TURBO ON", 0        
 ;
 ; MASTER START ROUTINE
 ;
@@ -2650,6 +2711,8 @@ CURPD2:   DEFB    6,0
           DEFB     12,  0,  0
           DEFB    1,4,2,6,1,0,5,4,3,6,5,0
           DEFB    1,3,2,5,1,0,0
+          
+
 ;
 ; TECHNOITE ROUTINE
 ;
@@ -2709,20 +2772,39 @@ TUCH5:    CALL    ITEMGT        ; Žæ“¾‰¹
           CALL    MOVESD        ; ‰‰o‰¹
           LD      A,(IX+13)     ; ‚±‚ÌƒAƒCƒeƒ€‚ÌF‚ðŽæ“¾
           LD      DE,400        ; F‚ª 8 ‚È‚ç 400“_
+          LD      HL,SCSTR_400
           CP      8             ; 
           JR      Z,M3TJ5       ; 
           LD      DE,200        ; F‚ª 7 ‚È‚ç 200“_
+          LD      HL,SCSTR_200
           CP      7             ; 
           JR      Z,M3TJ5       ; 
           LD      DE,100        ; F‚ª 3 ‚È‚ç 100“_
+          LD      HL,SCSTR_100
           CP      3             ; 
           JR      Z,M3TJ5       ; 
           LD      DE,50         ; ‚»‚êˆÈŠOi10j‚È‚ç 50“_
+          LD      HL,SCSTR_50
 M3TJ5:    CALL    SCOREUP       ; ƒXƒRƒA‰ÁŽZ
-          XOR     A             ; 
+
+          PUSH    IY
+          PUSH    HL
+          POP     IY
+          LD      A,(IX+13)
+          LD      (IY+2),A    
+          LD      A,2
+          CALL    FONT_SET
+          
+          XOR     A
           LD      (IX+0),A      ; ƒAƒCƒeƒ€Á‹Ž
           LD      (IX+2),A      ; 
+          POP     IY
           RET                   ;
+          ;
+SCSTR_50:  DEFB    108, 120, 0, " 50PT", 0
+SCSTR_100: DEFB    108, 120, 0, "100PT", 0
+SCSTR_200: DEFB    108, 120, 0, "200PT", 0
+SCSTR_400: DEFB    108, 120, 0, "400PT", 0
 ;
 ; MINING PARTY ROUTINE
 ;
@@ -2811,15 +2893,31 @@ PARPD3:   DEFB    9,0
 TUCH6:    CALL    ITEMGT        ; ƒAƒCƒeƒ€Žæ“¾‰¹
           CALL    MOVESD        ; ‰‰o‰¹
           LD      A,(IX+8)      ; ƒIƒuƒWƒFƒNƒg‚ÌYÀ•W‚ðŠm”F
+          LD      HL,SCSTR_250
           LD      DE,250        ; Šî–{‚Í250“_
           CP      253           ; YÀ•W‚ª253iƒpƒ^[ƒ“2j‚È‚ç
           JR      Z,$+5         ; ƒWƒƒƒ“ƒv 
+          LD      HL,SCSTR_500
           LD      DE,500        ; ˆá‚¤‚È‚çƒLƒƒƒ“ƒv‚¾‚©‚ç500“_‚ÉƒAƒbƒvI
           CALL    SCOREUP       ; ƒXƒRƒA‰ÁŽZ
+          
+          PUSH    IY
+          PUSH    HL
+          POP     IY
+          LD      A,(IX+13)
+          LD      (IY+2),A
+          
+          LD      A,2
+          CALL    FONT_SET
+          
           XOR     A             ; 
           LD      (IX+0),A      ; ƒIƒuƒWƒFƒNƒgÁ‹Ž
           LD      (IX+2),A      ; 
+          POP     IY
           RET                   
+
+SCSTR_250: DEFB   108, 120, 0, "250PT", 0
+SCSTR_500: DEFB   108, 120, 0, "500PT", 0
 ;
 ; GOD_MODE ITEM ROUTINE
 ;
@@ -2939,14 +3037,22 @@ BOMBPT:
 TUCH7:
           CALL    VOLCANO       ; ƒTƒEƒ“ƒhƒR[ƒ‹
           CALL    MOVESD
-          CALL    ALLBREAK      ; ‘SƒIƒuƒWƒFƒNƒg”j‰ó
+          LD      A,(SWITCH)    ; ‘S”j‰óƒtƒ‰ƒO‚ð—§‚Ä‚é
+          SET     7,A
+          LD      (SWITCH),A
+       ;   CALL    ALLBREAK      ; ‘SƒIƒuƒWƒFƒNƒg”j‰ó
           XOR     A
           LD      (IX+0),A      ; ƒIƒuƒWƒFƒNƒgÁ‹Ž
           LD      (IX+2),A      
           LD      HL,KEY        ; STAGE3‚Ì‹z‚¢ž‚Ý“G‚ª‘‚«‘Ö‚¦‚½ê‡‚ª‚ ‚é‚©‚ç
           LD      (MASTER+5),HL ; ”O‚Ì‚½‚ß‚ÉŽ©‹@‚ÌˆÚ“®ƒ‹[ƒ`ƒ“‚ð–ß‚·
+          ;
+          LD      A,2
+          LD      HL,BOMBSTR
+          CALL    FONT_SET
           RET                   
-
+          ;         
+BOMBSTR:  DEFB    104,120, 3, "BOMB!!", 0
 ;
 ; RANDOM ROUTINE
 ;
@@ -3344,6 +3450,397 @@ KEYOFF:
             OUT     (9911),A
             EI
             RET
+            
+;---------------------------------------------------------------------
+;
+; MSX2 SCREEN5 256•¶Žš“WŠJ & VDPƒRƒ}ƒ“ƒh•\Ž¦
+;
+;---------------------------------------------------------------------
+        
+VDP_REG  EQU    099H
+VDP_DATA EQU    098H
+VDP_VCM  EQU    09BH            ; VDPƒRƒ}ƒ“ƒhƒŒƒWƒXƒ^—pƒ|[ƒg (d—v)
+CSLOT    EQU    0F91FH
+CGPNT    EQU    0F920H
+
+;==============================================================================
+; PRINT_STR - •¶Žš—ñ•`‰æƒƒCƒ“
+;==============================================================================
+PRINT_STR:
+        LD      A, (HL)
+        INC     HL
+        LD      (CUR_X), A
+        LD      A, (HL)
+        INC     HL
+        LD      (CUR_Y), A
+        LD      A, (HL)
+        INC     HL
+        LD      (CUR_CLR), A
+STR_LP:
+        LD      A, (HL)
+        OR      A
+        RET     Z
+        PUSH    HL
+        LD      (CUR_CHR), A
+        CALL    DRAW_CHAR
+        ; X‚ð8ƒhƒbƒgi‚ß‚é
+        LD      A, (CUR_X)
+        ADD     A, 8
+        LD      (CUR_X), A
+        POP     HL
+        INC     HL
+        JR      STR_LP
+
+;==============================================================================
+; DRAW_CHAR - 1•¶Žš•`‰æ
+;==============================================================================
+DRAW_CHAR:
+        LD      HL, 8
+        LD      (V_NX), HL
+        LD      (V_NY), HL
+
+        ; --- 1. ƒ[ƒNƒGƒŠƒA‚ð“h‚è‚Â‚Ô‚µ ---
+        CALL    WAIT_VDP
+        LD      HL, 0
+        LD      (V_DX), HL
+        LD      HL, 1016
+        LD      (V_DY), HL
+        LD      A, (CUR_CLR)
+        RLCA
+        RLCA
+        RLCA
+        RLCA
+        LD      B, A
+        LD      A, (CUR_CLR)
+        AND     0FH
+        OR      B
+        LD      (V_CLR), A
+        LD      A, 0C0H
+        LD      (V_CMD), A
+        CALL    SEND_VCMD
+
+        ; --- 2. ƒtƒHƒ“ƒg‚ðAND‚Åd‚Ë‚é ---
+        CALL    WAIT_VDP
+        LD      A, (CUR_CHR)
+        AND     0FH
+        ADD     A, A
+        ADD     A, A
+        ADD     A, A
+        LD      L, A
+        LD      H, 0
+        LD      (V_SX), HL
+        LD      A, (CUR_CHR)
+        AND     0F0H
+        SRL     A
+        LD      L, A
+        LD      H, 0
+        LD      DE, 768
+        ADD     HL, DE
+        LD      (V_SY), HL
+        LD      HL, 0
+        LD      (V_DX), HL
+        LD      HL, 1016
+        LD      (V_DY), HL
+        LD      A, 091H
+        LD      (V_CMD), A
+        CALL    SEND_VCMD
+
+        ; --- 3. ‰æ–Ê‚Ö“§–¾“]‘— ---
+        CALL    WAIT_VDP
+        LD      HL, 0
+        LD      (V_SX), HL
+        LD      HL, 1016
+        LD      (V_SY), HL
+        LD      A, (CUR_X)
+        LD      L, A
+        LD      H, 0
+        LD      (V_DX), HL
+        LD      A, (CUR_Y)
+        LD      L, A
+        LD      H, 0
+        LD      A,(VIJUAL)
+        CP      1
+        JR      Z,PAGE0
+        LD      DE,256 ; ƒy[ƒW‚P‚Ö•`‰æ‚·‚é‚É‚Í‚xÀ•W‚É256‚ð‘«‚·
+        ADD     HL,DE
+PAGE0:        
+        LD      (V_DY), HL
+        LD      A, 098H
+        LD      (V_CMD), A
+        CALL    SEND_VCMD
+        RET
+
+;==============================================================================
+; VDP‹¤’Êƒ‹[ƒ`ƒ“
+;==============================================================================
+WAIT_VDP:
+        DI
+        LD      A, 2
+        OUT     (VDP_REG), A
+        LD      A, 143          ; R#15
+        OUT     (VDP_REG), A
+        IN      A, (VDP_REG)
+        PUSH    AF
+        LD      A, 0
+        OUT     (VDP_REG), A
+        LD      A, 143          ; R#15
+        OUT     (VDP_REG), A
+        EI
+        POP     AF
+        AND     1
+        JR      NZ, WAIT_VDP
+        RET
+
+SEND_VCMD:
+        DI
+        LD      A, 32           ; R#32
+        OUT     (VDP_REG), A
+        LD      A, 145          ; R#17
+        OUT     (VDP_REG), A
+        LD      C, VDP_VCM      ; Port 9BH
+        LD      HL, V_SX
+        LD      B, 15
+V_S_LP:
+        OUTI
+        JR      NZ, V_S_LP
+        EI
+        RET
+
+;==============================================================================
+; ƒtƒHƒ“ƒg“WŠJ
+;==============================================================================
+FT_EXPAND_256:
+        LD      A, 0
+        LD      (WK_CHR), A
+FT_LP:
+        LD      A, (WK_CHR)
+        AND     0FH
+        ADD     A, A
+        ADD     A, A
+        LD      (WK_X), A
+        LD      A, (WK_CHR)
+        AND     0F0H
+        SRL     A
+        LD      (WK_Y), A
+        LD      A, (WK_CHR)
+        LD      L, A
+        LD      H, 0
+        ADD     HL, HL
+        ADD     HL, HL
+        ADD     HL, HL
+        LD      DE, (CGPNT)
+        ADD     HL, DE
+        LD      DE, FONT_TMP
+        LD      B, 8
+FT_GET:
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+        LD      A, (CSLOT)
+        CALL    000CH
+        LD      C, A
+        POP     HL
+        POP     DE
+        LD      A, C
+        LD      (DE), A
+        INC     DE
+        INC     HL
+        POP     BC
+        DJNZ    FT_GET
+        LD      IX, FONT_TMP
+        LD      B, 8
+FT_LINE:
+        PUSH    BC
+        LD      A, (WK_Y)
+        LD      L, A
+        LD      H, 0
+        ADD     HL, HL
+        ADD     HL, HL
+        ADD     HL, HL
+        ADD     HL, HL
+        ADD     HL, HL
+        ADD     HL, HL
+        ADD     HL, HL
+        LD      A, (WK_X)
+        LD      E, A
+        LD      D, 0
+        ADD     HL, DE
+        DI
+        LD      A, 6            ; VRAM Address 18000H (Page 3)
+        OUT     (VDP_REG), A
+        LD      A, 142          ; R#14
+        OUT     (VDP_REG), A
+        LD      A, L
+        OUT     (VDP_REG), A
+        LD      A, H
+        OR      40H
+        OUT     (VDP_REG), A
+        LD      A, (IX)
+        INC     IX
+        LD      C, A
+        LD      D, 4
+FT_EXP:
+        XOR     A
+        SLA     C
+        JR      NC, FT_L0
+        LD      A, (WK_FG)
+        SLA     A
+        SLA     A
+        SLA     A
+        SLA     A
+FT_L0:
+        PUSH    AF
+        SLA     C
+        LD      A, 0
+        JR      NC, FT_R0
+        LD      A, (WK_FG)
+        AND     0FH
+FT_R0:
+        LD      H, A
+        POP     AF
+        OR      H
+        OUT     (VDP_DATA), A
+        DEC     D
+        JR      NZ, FT_EXP
+        EI
+        LD      A, (WK_Y)
+        INC     A
+        LD      (WK_Y), A
+        POP     BC
+        DJNZ    FT_LINE
+        LD      A, (WK_Y)
+        SUB     8
+        LD      (WK_Y), A
+        LD      A, (WK_CHR)
+        INC     A
+        LD      (WK_CHR), A
+        CP      0
+        JP      NZ, FT_LP
+        RET
+
+; --- FONT WORK ---
+WK_X:     DEFB 0
+WK_Y:     DEFB 0
+WK_CHR:   DEFB 0
+WK_FG:    DEFB 0
+CUR_X:    DEFB 0
+CUR_Y:    DEFB 0
+CUR_CLR:  DEFB 0
+CUR_CHR:  DEFB 0
+FONT_TMP: DEFS 8
+V_SX:     DEFW 0
+V_SY:     DEFW 0
+V_DX:     DEFW 0
+V_DY:     DEFW 0
+V_NX:     DEFW 0
+V_NY:     DEFW 0
+V_CLR:    DEFB 0
+V_ARG:    DEFB 0
+V_CMD:    DEFB 0
+;------------------------------------------------
+;
+; ASCII FONT DISPFUNC
+;
+;------------------------------------------------
+ASCII_DISP:
+          PUSH    AF
+          PUSH    HL
+          LD      A,(IX+3)
+          LD      L,A
+          LD      A,(IX+4)
+          LD      H,A
+          
+          PUSH    AF
+          PUSH    BC
+          PUSH    DE
+          PUSH    IX
+          CALL    PRINT_STR
+          POP     IX
+          POP     DE
+          POP     BC
+          POP     AF
+          
+          INC     (IX+1)
+          LD      A,(IX+1)
+          SUB     (IX+10)
+          JR      NZ,NOERASE
+          XOR     A
+          LD      (IX+0),A
+NOERASE:  POP     HL
+          POP     AF
+          RET
+          
+FONT_SET:
+          LD      (ASCOUNT),A
+          LD      (ASCFONT),HL
+;          PUSH    AF
+;          PUSH    BC
+;          PUSH    DE
+;          PUSH    IX
+;          CALL    PRINT_STR          
+;          POP     IX
+;          POP     DE
+;          POP     BC
+;          POP     AF
+          RET
+;------------------------------------------------
+;
+; LICENSE DEMO
+;
+;------------------------------------------------
+
+LICENSE_DEMO:
+          PUSH    AF
+          LD      IX,SCOLOR     ; FŠÇ—ƒ[ƒNƒGƒŠƒA‚Ìƒx[ƒXƒAƒhƒŒƒX‚ðƒZƒbƒg
+          LD      A,15          ; ”’FiƒpƒŒƒbƒg15j
+          LD      (IX+0),A      ; ƒ^[ƒQƒbƒgFÝ’è
+          LD      A,1           ; 
+          LD      (IX+1),A      ; ƒtƒ‰ƒO‚Ü‚½‚Í‘•ªÝ’è
+          LD      A,00001000B   ; ƒrƒbƒg‘®«Ý’è
+          LD      (IX+2),A      
+          ;
+          CALL    CLSPRI        ; ƒIƒuƒWƒFƒNƒgƒ[ƒNƒGƒŠƒA‘SÁ‹Ž
+          CALL    DSET
+          DEFW    L_MSG0,ASCII_DISP
+          DEFB    0,0,0,48,0,0
+          DEFB    0,0,00000001B     
+          CALL    DSET
+          DEFW    L_MSG1,ASCII_DISP
+          DEFB    0,0,0,48,0,0
+          DEFB    0,0,00000001B  
+          CALL    DSET
+          DEFW    L_MSG2,ASCII_DISP
+          DEFB    0,0,0,48,0,0
+          DEFB    0,0,00000001B          
+          CALL    DSET
+          DEFW    L_MSG3,ASCII_DISP
+          DEFB    0,0,0,48,0,0
+          DEFB    0,0,00000001B          
+          CALL    DSET
+          DEFW    L_MSG4,ASCII_DISP
+          DEFB    0,0,0,48,0,0
+          DEFB    0,0,00000001B          
+          CALL    DSET
+          DEFW    L_MSG5,ASCII_DISP
+          DEFB    0,0,0,48,0,0
+          DEFB    0,0,00000001B
+
+          CALL    UNFADE        ; ƒtƒF[ƒhƒCƒ“ŠJŽni‰æ–Ê‚ð–¾‚é‚­‚·‚éj
+          LD      A,20           ; 
+          CALL    MAIN          ; 40ƒtƒŒ[ƒ€MAINŽÀs          
+          CALL    FADE          ; ƒtƒF[ƒhƒAƒEƒgŠJŽn
+          LD      A,8           ; 8ƒtƒŒ[ƒ€MAINŽÀs
+          CALL    MAIN
+          CALL    CLSPRI  
+          POP     AF
+          JP      LOGODEMO      ; ƒ^ƒCƒgƒ‹‰æ–Êƒ‹[ƒ`ƒ“‚Ö‘JˆÚ
+          ;
+L_MSG0: DEFB 32, 60, 13, "<<< ROCK CITY 2024 >>>", 0
+L_MSG1: DEFB 40, 100, 11, "- SOFTWARE LICENSE -", 0
+L_MSG2: DEFB 36, 134, 15, "Copyright (C) 1993-2026", 0
+L_MSG3: DEFB 4,  154, 15, "Licensed under the MIT License.", 0
+L_MSG4: DEFB 24, 164, 15, "THIS SOFTWARE IS PROVIDED", 0
+L_MSG5: DEFB 30, 174, 15, "\"AS IS\" WITHOUT WARRANTY", 0
 ;------------------------------------------------
 ;
 ; LOGO DEMO
@@ -3406,6 +3903,18 @@ LOGOMV2:  LD      A,(IX+9)      ; ƒ[ƒNƒGƒŠƒA‚©‚çŒ»Ý‚Ì“à•”ó‘Ô‚ðŽæ“¾
           ;
 MV2JR:    INC     (IX+1)        ; ƒJƒEƒ“ƒ^‚ðƒCƒ“ƒNƒŠƒƒ“ƒg
           LD      A,(IX+1)
+          
+          PUSH    AF
+          PUSH    BC
+          PUSH    DE
+          PUSH    IX
+          LD      HL,VERSTR
+          CALL    PRINT_STR       
+          POP     IX
+          POP     DE
+          POP     BC
+          POP     AF
+          
           CP      16            ; ƒJƒEƒ“ƒ^‚ª16‚É‚È‚Á‚½‚©H
           JR      NZ,MV2JR2     ; 16–¢–ž‚È‚çƒeƒLƒXƒg•\Ž¦‚Ö
           ; --- ƒJƒEƒ“ƒ^16“ž’BŽžFƒƒS‚ð3‚Â‚Ìƒp[ƒc‚É•ª—£‚µ‚ÄÄ“o˜^ ---
@@ -3429,8 +3938,10 @@ MV2JR2:   ;
           DEFB    0,0,00010101B 
           RET
           
-LGDEMOMJ: DEFB 'M',10+46,175,'S',10+62,175,'X',10+78,175,'2',10+94,175,'G',10+126,175,'A',10+142,175,'M',10+158,175,'E',10+174,175,'S',10+188,175
+LGDEMOMJ: DEFB 'M',10+46,175,'S',10+62,175,'X',10+78,175,'2',10+94,175,'G',10+126,175,'A',10+142,175,'M',10+158,175,'E',10+174,175,'S',10+188,175,0
 		  DEFB MJVER,60+158,220,MIVER,60+170,220,PTVER,60+182,220,0
+
+VERSTR    DEFB 80,220,15, "ROCKCITY2024 ver",MJVER,".",MIVER,".",PTVER,0
 ;
 ;---- M POINT DATA ----
 ;
