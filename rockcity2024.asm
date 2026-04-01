@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 3.2.1
+;  MSXPen LAST VERSION VER 3.2.2
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -32,9 +32,9 @@ EXPTBL:  EQU     0FCC1H  ; [WORK AREA] Šî–{ƒXƒƒbƒg‚ÌŠg’£ƒtƒ‰ƒO‚ªŠi”[‚³‚ê‚Ä‚¢‚éƒ
 CLIKSW:   EQU     0F3DBH ; ƒNƒŠƒbƒN‰¹‚ðÁ‚·‚©‚Ç‚¤‚©
 MJVER:    EQU     '3'    ; ƒƒWƒƒ[ƒo[ƒWƒ‡ƒ“
 MIVER:    EQU     '2'    ; ƒ}ƒCƒi[ƒo[ƒWƒ‡ƒ“
-PTVER:    EQU     '1'    ; ƒpƒbƒ`ƒo[ƒWƒ‡ƒ“
+PTVER:    EQU     '2'    ; ƒpƒbƒ`ƒo[ƒWƒ‡ƒ“
 DSTOCK    EQU     7      ; ƒfƒtƒHƒ‹ƒgŽ©‹@”iÅ‘å9‹@j
-          ORG     08200H ; ŠJŽnƒAƒhƒŒƒXiŒÀŠE‚Ü‚Åí‚Á‚½j
+          ORG     08400H ; ŠJŽnƒAƒhƒŒƒXiŒÀŠE‚Ü‚Åí‚Á‚½j
 ;
 ;---- SCREEN & COLOR SET ----
 ;
@@ -264,14 +264,14 @@ RETURN:   LD      SP,(SSTACK)   ; ’†’fŽžFƒXƒ^ƒbƒNƒ|ƒCƒ“ƒ^‚ðˆÀ‘S‚ÈêŠ‚Ö–ß‚·
           JP      START         ; ƒ^ƒCƒgƒ‹‰æ–Ê‚âÅ‰‚Ö–ß‚é
 ;
 ST_SCORE: DEFB 4+64, 24, 15, "SCORE        ",0
-ST_LIFE:  DEFB 4,    24, 15, "LEFT   ",0
+ST_LIFE:  DEFB 4,    24, 15, "LIFE   ",0
 ST_FPS:   DEFB 4,208+16, 15, "FPS    ",0 
 
-;==============================================================================
+;================================================================
 ; BIN2DEC_16 - 16bit”’l(HL)‚ð10i•ÏŠ· (ƒ[ƒƒTƒvƒŒƒX‚ ‚è)
 ; “ü—Í: HL = •ÏŠ·‚·‚é”’l (0-65535)
 ;       DE = Ši”[æƒƒ‚ƒŠƒAƒhƒŒƒX
-;==============================================================================
+;================================================================
 BIN2DEC_16:
         PUSH    HL
         PUSH    DE
@@ -343,9 +343,9 @@ DIGIT_COUNT:
 ; --- ƒ[ƒNƒGƒŠƒA ---
 SUPPRESS_FLG: DEFB 0            ; 0=—}§’†, 1=‘‚«ž‚ÝŠJŽnÏ‚Ý
 
-;==============================================================================
+;=============================================================
 ; FPS COUNTER SYSTEM
-;==============================================================================
+;=============================================================
 
 JIFFY   EQU     0FC9EH          ; MSXƒVƒXƒeƒ€•Ï” (1/60•b‚²‚Æ‚ÉƒJƒEƒ“ƒgƒAƒbƒv)
 
@@ -3687,19 +3687,23 @@ STR_LPF:
         INC     HL
         JR      STR_LPF
 ;==============================================================================
-; DRAW_CHAR - 1•¶Žš•`‰æ
+; DRAW_CHAR - F•t‚«ƒtƒHƒ“ƒg‚ð•`‰æ‚·‚é (”wŒi•E‚‘¬”Å)
 ;==============================================================================
 DRAW_CHAR:
+        ; --- 0. ‹¤’ÊÝ’èi8x8ƒhƒbƒgŒÅ’èj ---
         LD      HL, 8
         LD      (V_NX), HL
         LD      (V_NY), HL
 
-        ; --- 1. ƒ[ƒNƒGƒŠƒA‚ð“h‚è‚Â‚Ô‚µ ---
+        ; --- 1. ƒ[ƒNƒGƒŠƒA‚ð•¶Žš‚ÌF‚Å“h‚è‚Â‚Ô‚· (HMMV) ---
+        ; 1016ƒ‰ƒCƒ“–Ú‚È‚Ç‚ÌŒ©‚¦‚È‚¢êŠ‚ðu’n‚ÌFv‚É‚·‚é
         CALL    WAIT_VDP
         LD      HL, 0
         LD      (V_DX), HL
-        LD      HL, 1016
+        LD      HL, 1016        ; ƒ[ƒNƒGƒŠƒA‚ÌYÀ•W
         LD      (V_DY), HL
+
+        ; Žw’è‚³‚ê‚½F(CUR_CLR)‚ðVDPŒ`Ž®i1ƒoƒCƒg“à‚É2ƒhƒbƒg•ªj‚É•ÏŠ·
         LD      A, (CUR_CLR)
         RLCA
         RLCA
@@ -3709,13 +3713,17 @@ DRAW_CHAR:
         LD      A, (CUR_CLR)
         AND     0FH
         OR      B
-        LD      (V_CLR), A
-        LD      A, 0C0H
-        LD      (V_CMD), A
-        CALL    SEND_VCMD
+        LD      (V_CLR), A      ; ‘‚«ž‚ÝF‚ðƒZƒbƒg
 
-        ; --- 2. ƒtƒHƒ“ƒg‚ðAND‚Åd‚Ë‚é ---
+        LD      A, 0C0H         ; HMMVƒRƒ}ƒ“ƒh (VRAM‚‘¬“h‚è‚Â‚Ô‚µ)
+        LD      (V_CMD), A
+        CALL    SEND_VCMD       ; ŽÀs
+
+        ; --- 2. ƒtƒHƒ“ƒg‚ðAND‚Åd‚Ë‚ÄuŒ`v‚ðØ‚è”²‚­ (LMMM + AND) ---
+        ; ”’‚¢ƒtƒHƒ“ƒg‚ª‚ ‚é•”•ª‚¾‚¯Aæ‚Ù‚Ç‚ÌF‚ªŽc‚é
         CALL    WAIT_VDP
+        
+        ; ƒtƒHƒ“ƒgƒ\[ƒXÀ•W‚ÌŒvŽZ (CUR_CHR ‚©‚çŽZo)
         LD      A, (CUR_CHR)
         AND     0FH
         ADD     A, A
@@ -3723,47 +3731,59 @@ DRAW_CHAR:
         ADD     A, A
         LD      L, A
         LD      H, 0
-        LD      (V_SX), HL
+        LD      (V_SX), HL      ; ƒ\[ƒXX
+        
         LD      A, (CUR_CHR)
         AND     0F0H
         SRL     A
         LD      L, A
         LD      H, 0
-        LD      DE, 768
+        LD      DE, 768         ; ƒtƒHƒ“ƒgŠi”[ŠJŽnYÀ•Wi—áj
         ADD     HL, DE
-        LD      (V_SY), HL
+        LD      (V_SY), HL      ; ƒ\[ƒXY
+        
         LD      HL, 0
         LD      (V_DX), HL
         LD      HL, 1016
-        LD      (V_DY), HL
-        LD      A, 091H
+        LD      (V_DY), HL      ; “]‘—æ‚Íƒ[ƒNƒGƒŠƒA
+        
+        LD      A, 091H         ; LMMMƒRƒ}ƒ“ƒh + AND‰‰ŽZ
         LD      (V_CMD), A
-        CALL    SEND_VCMD
+        CALL    SEND_VCMD       ; ŽÀs
 
-        ; --- 3. ‰æ–Ê‚Ö“§–¾“]‘— ---
+        ; --- 3. ƒ[ƒNƒGƒŠƒA‚©‚ç‰æ–Ê‚Ö‚‘¬ƒRƒs[ (HMMM) ---
+        ; ”wŒi‚ª•‚È‚çA“§‰ßˆ—(TIMP)‚ðŽg‚í‚¸‚ÉHMMM‚Åã‘‚«‚·‚é‚Ì‚ªÅ‘¬
         CALL    WAIT_VDP
         LD      HL, 0
-        LD      (V_SX), HL
+        LD      (V_SX), HL      ; ƒ[ƒNƒGƒŠƒA‚ÌX=0
         LD      HL, 1016
-        LD      (V_SY), HL
+        LD      (V_SY), HL      ; ƒ[ƒNƒGƒŠƒA‚ÌY=1016
+        
+        ; •`‰ææ‚ÌÀ•W(CUR_X, CUR_Y)‚ðƒZƒbƒg
         LD      A, (CUR_X)
         LD      L, A
         LD      H, 0
         LD      (V_DX), HL
+        
         LD      A, (CUR_Y)
         LD      L, A
         LD      H, 0
-        LD      A,(VIJUAL)
+        
+        ; ƒy[ƒWØ‚è‘Ö‚¦iƒ_ƒuƒ‹ƒoƒbƒtƒ@j‘Î‰ž
+        LD      A, (VIJUAL)
         CP      1
-        JR      Z,PAGE0
-        LD      DE,256 ; ƒy[ƒW‚P‚Ö•`‰æ‚·‚é‚É‚Í‚xÀ•W‚É256‚ð‘«‚·
-        ADD     HL,DE
-PAGE0:        
+        JR      Z, PAGE0
+        LD      DE, 256         ; ƒy[ƒW1‚È‚çYÀ•W‚É256‰ÁŽZ
+        ADD     HL, DE
+PAGE0:
         LD      (V_DY), HL
-        LD      A, 098H
+        
+        ; š‚±‚±‚ª‚‘¬‰»‚ÌŠÌF098H(LMMM)‚ð 0D0H(HMMM) ‚É•ÏX
+        LD      A, 0D0H         ; HMMMƒRƒ}ƒ“ƒh (‚‘¬‹éŒ`“]‘—)
         LD      (V_CMD), A
-        CALL    SEND_VCMD
+        CALL    SEND_VCMD       ; ŽÀs
         RET
+
 ;==============================================================================
 ; DRAW_CHAR_FAST - 1•¶Žš‚‘¬•`‰æ (”’ŒÅ’èELMMM“]‘—)
 ;==============================================================================
@@ -4224,7 +4244,7 @@ MV2JR2:   ;
 LGDEMOMJ: DEFB 'M',10+46,175,'S',10+62,175,'X',10+78,175,'2',10+94,175,'G',10+126,175,'A',10+142,175,'M',10+158,175,'E',10+174,175,'S',10+188,175,0
 		  DEFB MJVER,60+158,220,MIVER,60+170,220,PTVER,60+182,220,0
 
-VERSTR    DEFB 80,220,15, "ROCKCITY2024 ver",MJVER,".",MIVER,".",PTVER,0
+VERSTR    DEFB 184,220,15, "ver",MJVER,".",MIVER,".",PTVER,0
 ;
 ;---- M POINT DATA ----
 ;
