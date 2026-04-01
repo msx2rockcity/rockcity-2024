@@ -2,7 +2,7 @@
 ;
 ;  ROCK CITY
 ;
-;  MSXPen LAST VERSION VER 3.2.0
+;  MSXPen LAST VERSION VER 3.2.1
 ;
 ;  PROGRAM by msx2rockcity
 ;
@@ -32,7 +32,7 @@ EXPTBL:  EQU     0FCC1H  ; [WORK AREA] Šî–{ƒXƒƒbƒg‚ÌŠg’£ƒtƒ‰ƒO‚ªŠi”[‚³‚ê‚Ä‚¢‚éƒ
 CLIKSW:   EQU     0F3DBH ; ƒNƒŠƒbƒN‰¹‚ðÁ‚·‚©‚Ç‚¤‚©
 MJVER:    EQU     '3'    ; ƒƒWƒƒ[ƒo[ƒWƒ‡ƒ“
 MIVER:    EQU     '2'    ; ƒ}ƒCƒi[ƒo[ƒWƒ‡ƒ“
-PTVER:    EQU     '0'    ; ƒpƒbƒ`ƒo[ƒWƒ‡ƒ“
+PTVER:    EQU     '1'    ; ƒpƒbƒ`ƒo[ƒWƒ‡ƒ“
 DSTOCK    EQU     7      ; ƒfƒtƒHƒ‹ƒgŽ©‹@”iÅ‘å9‹@j
           ORG     08200H ; ŠJŽnƒAƒhƒŒƒXiŒÀŠE‚Ü‚Åí‚Á‚½j
 ;
@@ -3855,31 +3855,25 @@ V_S_LP:
         JR      NZ, V_S_LP
         EI
         RET
-
+        
 ;==============================================================================
-; ƒtƒHƒ“ƒg“WŠJ
+; FT_EXPAND_256 - ‘¾Žš‰»‚µ‚ÄPage 3 (18000H) ‚Ö“WŠJ
 ;==============================================================================
 FT_EXPAND_256:
         LD      A, 0
         LD      (WK_CHR), A
 FT_LP:
-        LD      A, (WK_CHR)
-        AND     0FH
-        ADD     A, A
-        ADD     A, A
-        LD      (WK_X), A
-        LD      A, (WK_CHR)
-        AND     0F0H
-        SRL     A
-        LD      (WK_Y), A
+        ; --- 1. “Ç‚Ýž‚ÝŒ³ (CGROM) ‚ÌƒAƒhƒŒƒXŒvŽZ ---
         LD      A, (WK_CHR)
         LD      L, A
         LD      H, 0
-        ADD     HL, HL
-        ADD     HL, HL
-        ADD     HL, HL
-        LD      DE, (CGPNT)
+        ADD     HL, HL          ; *2
+        ADD     HL, HL          ; *4
+        ADD     HL, HL          ; *8 (1•¶Žš8ƒoƒCƒg)
+        LD      DE, (CGPNT)     ; BIOS‚ÌƒtƒHƒ“ƒgŠJŽnƒAƒhƒŒƒX
         ADD     HL, DE
+        
+        ; --- 2. BIOS‚©‚çƒtƒHƒ“ƒgƒf[ƒ^‚ð 8ƒoƒCƒgŽæ“¾ ---
         LD      DE, FONT_TMP
         LD      B, 8
 FT_GET:
@@ -3887,49 +3881,84 @@ FT_GET:
         PUSH    DE
         PUSH    HL
         LD      A, (CSLOT)
-        CALL    000CH
+        CALL    000CH           ; ˆÙƒXƒƒbƒg(BIOS)‚©‚ç1ƒoƒCƒg“Ç‚Ýž‚Ý
         LD      C, A
         POP     HL
         POP     DE
         LD      A, C
-        LD      (DE), A
+        LD      (DE), A         ; ƒ[ƒN(FONT_TMP)‚Ö•Û‘¶
         INC     DE
         INC     HL
         POP     BC
         DJNZ    FT_GET
+
+        ; --- 3. VRAM Page 3 ‚Ö‚Ì‘‚«ž‚Ý€”õ ---
+        ; “WŠJæÀ•W: X = (ID & 0Fh) * 8,  Y = (ID >> 4) * 8
+        ; Page 3‚ÌƒAƒhƒŒƒX = 18000H + (Y * 128) + (X / 2)
+        
+        LD      A, (WK_CHR)
+        AND     0F0H            ; ãˆÊ4bit (0, 16, 32...)
+        SRL     A
+        SRL     A               ; A = (ID>>4) * 4
+        ; A‚ÍŒ»ÝA•¶Žš’PˆÊ‚ÌYƒIƒtƒZƒbƒgB1•¶Žš8ƒ‰ƒCƒ“‚È‚Ì‚Å A*2 = ÅI“I‚ÈY
+        ADD     A, A            ; A = (ID>>4) * 8 (0, 8, 16...120)
+        LD      (WK_Y), A       ; “WŠJŠJŽnYƒ‰ƒCƒ“
+
+        LD      A, (WK_CHR)
+        AND     0FH             ; ‰ºˆÊ4bit (0-15)
+        ADD     A, A
+        ADD     A, A
+        ADD     A, A            ; A = (ID&0Fh) * 8 (0, 8, 16...120)
+        LD      (WK_X), A       ; “WŠJŠJŽnXƒhƒbƒg
+
         LD      IX, FONT_TMP
-        LD      B, 8
+        LD      B, 8            ; 8ƒ‰ƒCƒ“•ªƒ‹[ƒv
 FT_LINE:
         PUSH    BC
+        
+        ; VRAMƒAƒhƒŒƒX(HL) = (Y * 128) + (X / 2)
         LD      A, (WK_Y)
         LD      L, A
         LD      H, 0
-        ADD     HL, HL
-        ADD     HL, HL
-        ADD     HL, HL
-        ADD     HL, HL
-        ADD     HL, HL
-        ADD     HL, HL
-        ADD     HL, HL
+        ADD     HL, HL          ; *2
+        ADD     HL, HL          ; *4
+        ADD     HL, HL          ; *8
+        ADD     HL, HL          ; *16
+        ADD     HL, HL          ; *32
+        ADD     HL, HL          ; *64
+        ADD     HL, HL          ; *128 (HL = Y * 128)
+        
         LD      A, (WK_X)
+        SRL     A               ; A = X / 2
         LD      E, A
         LD      D, 0
-        ADD     HL, DE
+        ADD     HL, DE          ; HL = (Y*128) + (X/2)
+
+        ; --- VDP ƒŒƒWƒXƒ^Ý’è (18000H‚Ö‚Ì‘‚«ž‚Ý) ---
         DI
-        LD      A, 6            ; VRAM Address 18000H (Page 3)
+        LD      A, 6            ; 18000H = 1 10 0000 0000 0000b -> R#14‚Í 06H
         OUT     (VDP_REG), A
         LD      A, 142          ; R#14
         OUT     (VDP_REG), A
+        
         LD      A, L
-        OUT     (VDP_REG), A
+        OUT     (VDP_REG), A    ; ‰ºˆÊ8bit
         LD      A, H
-        OR      40H
-        OUT     (VDP_REG), A
+        OR      40H             ; ‘‚«ž‚ÝŽw’è
+        OUT     (VDP_REG), A    ; ’†ˆÊ6bit
+        
+        ; --- ‘¾Žš‰»ƒƒWƒbƒN ---
         LD      A, (IX)
-        INC     IX
+        LD      C, A            ; C = Œ³
+        SRL     A
+        OR      C               ; A = ‘¾Žšƒpƒ^[ƒ“ (1bit‰E‚ÆOR)
         LD      C, A
+        INC     IX
+
+        ; 8ƒsƒNƒZƒ‹(4ƒoƒCƒg)o—Í
         LD      D, 4
 FT_EXP:
+        ; ¶ƒsƒNƒZƒ‹
         XOR     A
         SLA     C
         JR      NC, FT_L0
@@ -3940,31 +3969,37 @@ FT_EXP:
         SLA     A
 FT_L0:
         PUSH    AF
+        ; ‰EƒsƒNƒZƒ‹
         SLA     C
         LD      A, 0
         JR      NC, FT_R0
         LD      A, (WK_FG)
         AND     0FH
 FT_R0:
-        LD      H, A
+        LD      E, A
         POP     AF
-        OR      H
-        OUT     (VDP_DATA), A
+        OR      E
+        OUT     (VDP_DATA), A   ; VRAMo—Í
         DEC     D
         JR      NZ, FT_EXP
         EI
+
+        ; Y‚ð1ƒ‰ƒCƒ“i‚ß‚é
         LD      A, (WK_Y)
         INC     A
         LD      (WK_Y), A
         POP     BC
         DJNZ    FT_LINE
+
+        ; ŽŸ‚Ì•¶Žš‚ÖBY‚ð•¶Žš‚Ìæ“ª(8ƒ‰ƒCƒ“ã)‚É–ß‚·
         LD      A, (WK_Y)
         SUB     8
         LD      (WK_Y), A
+        
         LD      A, (WK_CHR)
         INC     A
         LD      (WK_CHR), A
-        CP      0
+        CP      0               ; 256•¶Žšƒ‹[ƒv
         JP      NZ, FT_LP
         RET
 
